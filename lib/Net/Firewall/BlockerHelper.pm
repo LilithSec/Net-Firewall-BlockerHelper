@@ -3,51 +3,215 @@ package Net::Firewall::BlockerHelper;
 use 5.006;
 use strict;
 use warnings;
+use base 'Error::Helper';
+use Regexp::IPv4 qw($IPv4_re);
+use Regexp::IPv6 qw($IPv6_re);
 
 =head1 NAME
 
-Net::Firewall::BlockerHelper - The great new Net::Firewall::BlockerHelper!
+Net::Firewall::BlockerHelper - 
 
 =head1 VERSION
 
-Version 0.01
+Version 0.0.1
 
 =cut
 
-our $VERSION = '0.01';
-
+our $VERSION = '0.0.1';
 
 =head1 SYNOPSIS
 
-Quick summary of what the module does.
-
-Perhaps a little code snippet.
-
     use Net::Firewall::BlockerHelper;
 
-    my $foo = Net::Firewall::BlockerHelper->new();
+    my $fw_helper = Net::Firewall::BlockerHelper->new();
     ...
 
-=head1 EXPORT
 
-A list of functions that can be exported.  You can delete this section
-if you don't export anything, such as for a purely object-oriented module.
+=head1 METHODS
 
-=head1 SUBROUTINES/METHODS
+=head2 new
 
-=head2 function1
+Initiates the the object.
+
+    - backend :: The backend to use. This must be specified.
+        - Default :: undef
+
+    - options :: Backend specific options that will be passed to the backend unchecked
+            outside of making sure it is a hash ref if defined.
+        - Default :: {}
+
+    - ports :: A array of ports to block. Checked to make sure they are positive ints or a valid
+            service name via getservbyname.
+        - Default :: []
+
+    - protocols :: A array of protocols to block. By default will block all. This
+            is checked against /etc/protocols via the function getprotobyname.
+        - Default :: []
+
+    - prefix :: Prefix to use. Must match the regex /^[a-zA-Z0-9]+$/
+        - default :: kur
+
+    - name :: Name of this specific instance.
+        - default :: undef
+
+All errors are considered fatal, meaning if new fails it will die.
 
 =cut
 
-sub function1 {
-}
+sub new {
+	my ( $blank, %opts ) = @_;
 
-=head2 function2
+	my $self = {
+		perror        => undef,
+		error         => undef,
+		errorLine     => undef,
+		errorFilename => undef,
+		errorString   => "",
+		errorExtra    => {
+			all_errors_fatal => 1,
+			flags            => {
+				1 => 'noBackendSpecified',
+				2 => 'invalidPortSpecified',
+				3 => 'portsNotArray',
+				4 => 'protocolsNotArray',
+				5 => 'invalidPortSpecified',
+				6 => 'invalidPrefixSpecified',
+				7 => 'invalidPostfix',
+			},
+			fatal_flags      => {},
+			perror_not_fatal => 0,
+		},
+		backend   => undef,
+		options   => {},
+		ports     => [],
+		protocols => [],
+		testing   => undef,
+		test_data => undef,
+		prefix    => 'kur',
+		postfix   => undef,
+	};
+	bless $self;
 
-=cut
+	if ( !defined $opts{backend} ) {
+		$self->{perror}      = 1;
+		$self->{error}       = 1;
+		$self->{errorString} = 'backend is undef';
+		$self->warn;
+	}
 
-sub function2 {
-}
+	if ( defined( $opts{ports} ) && ref( $opts{ports} ) ne 'ARRAY' ) {
+		$self->{perror}      = 1;
+		$self->{error}       = 3;
+		$self->{errorString} = 'ports is defined and type is not array but "' . ref( $opts{ports} ) . '"';
+		$self->warn;
+	} elsif ( defined( $opts{ports} ) ) {
+		foreach my $item ( @{ $opts{ports} } ) {
+			if ( $item =~ /^[0-9]+$/ && $item >= 1 ) {
+				push( @{ $self->{ports} }, $item );
+			} elsif ( $item =~ /^[0-9]+$/ && $item < 1 ) {
+				$self->{perror} = 1;
+				$self->{error}  = 2;
+				$self->{errorString}
+					= $item . ' is not a valid value for a port as it must be a int greater or equal to 1';
+				$self->warn;
+			} else {
+				# just using tcp here as protocol must be specified
+				my ( $name, $aliases, $port, $proto ) = getservbyname( $item, 'tcp' );
+				if ( !defined($port) ) {
+					$self->{perror} = 1;
+					$self->{error}  = 2;
+					$self->{errorString}
+						= $item . ' could not be resolved to a port name via getservbyname("' . $item . '", "tcp")';
+					$self->warn;
+				}
+			} ## end else [ if ( $item =~ /^[0-9]+$/ && $item >= 1 ) ]
+		} ## end foreach my $item ( @{ $opts{ports} } )
+	} ## end elsif ( defined( $opts{ports} ) )
+
+	if ( defined( $opts{protocols} ) && ref( $opts{protocols} ) ne 'ARRAY' ) {
+		$self->{perror}      = 1;
+		$self->{error}       = 4;
+		$self->{errorString} = 'protocols is defined and type is not array but "' . ref( $opts{protocols} ) . '"';
+		$self->warn;
+	} elsif ( defined( $opts{protocols} ) ) {
+		foreach my $item ( @{ $opts{protocols} } ) {
+			my ( $name, $aliases, $proto ) = getprotobyname($item);
+			# if this is undef, it means it is not a known protocol
+			if ( !defined($proto) ) {
+				$self->{perror} = 1;
+				$self->{error}  = 5;
+				$self->{errorString}
+					= $item . ' could not be resolved to a port name via getservbyname("' . $item . '", "tcp")';
+				$self->warn;
+			}
+			push( @{ $self->{protocols} }, $item );
+		} ## end foreach my $item ( @{ $opts{protocols} } )
+	} ## end elsif ( defined( $opts{protocols} ) )
+
+	# make sure prefix is sane if defiend
+	if ( defined( $opts{prefix} ) && $opts{prefix} !~ /^[a-zA-Z0-9]+$/ ) {
+		$self->{perror} = 1;
+		$self->{error}  = 6;
+		$self->{errorString}
+			= '"' . $opts{prefix} . '" is not a valid prefix as it does not match the regex /^[a-zA-Z0-9]+$/';
+		$self->warn;
+	} elsif ( defined( $opts{prefix} ) ) {
+		$self->{prefix} = $opts{prefix};
+	}
+
+	# make sure we have a postfix and that it is valid
+	if ( !defined( $opts{postfix} ) ) {
+		$self->{perror}      = 1;
+		$self->{error}       = 6;
+		$self->{errorString} = 'postfix is undef';
+		$self->warn;
+	} elsif ( $opts{postfix} !~ /^[a-zA-Z0-9\-]+$/ ) {
+		$self->{perror} = 1;
+		$self->{error}  = 6;
+		$self->{errorString}
+			= 'postfix set to "' . $opts{postfix} . '" which does not match the regexp  /^[a-zA-Z0-9\-]+$/';
+		$self->warn;
+	}
+	$self->{postfix} = $opts{postfix};
+
+	# used internally for testing
+	if ( !defined( $opts{testing} ) ) {
+		$self->{testing} = $opts{testing};
+	}
+
+	return $self;
+} ## end sub new
+
+=head1 ERROR CODES / FLAGS
+
+=head2 1, noBackendSpecified
+
+No backend was specified to use.
+
+=head2 2, invalidPortSpecified
+
+Port is either not a positive int or a name that can be resolved by getservbyname.
+
+=head2 3, portsNotArray
+
+The data passed to new for ports is not an array.
+
+=head2 4, protocolsNotArray
+
+The data passed to new for protocols is not an array.
+
+=head2 5, invalidPortSpecified
+
+Port is either not a positive int or a name that can be resolved by getservbyname.
+
+=head2 6, invalidPrefixSpecified
+
+The specified prefix did not match /^[a-zA-Z0-9]+$/.
+
+=head2 7, invalidPostfix
+
+The postfix is either undef or does not match /^[a-zA-Z0-9\-]+$/.
+
 
 =head1 AUTHOR
 
@@ -102,4 +266,4 @@ This is free software, licensed under:
 
 =cut
 
-1; # End of Net::Firewall::BlockerHelper
+1;    # End of Net::Firewall::BlockerHelper
