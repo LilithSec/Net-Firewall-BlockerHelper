@@ -56,6 +56,24 @@ Initiates the the object.
 
 All errors are considered fatal, meaning if new fails it will die.
 
+    my $fw_helper;
+    eval {
+        $fw_helper = Net::Firewall::BlockerHelper->new(
+                backend => 'ipfw',
+                ports => ['22'],
+                protocols => ['tcp'],
+                name => 'ssh',
+            );
+    };
+    if ($@) {
+        print 'Error: '
+            . $Error::Helper::error
+            . "\nError String: "
+            . $Error::Helper::errorString
+            . "\nError Flag: "
+            . $Error::Helper::errorFlag . "\n";
+    }
+
 =cut
 
 sub new {
@@ -76,19 +94,20 @@ sub new {
 				4 => 'protocolsNotArray',
 				5 => 'invalidPortSpecified',
 				6 => 'invalidPrefixSpecified',
-				7 => 'invalidPostfix',
+				7 => 'invalidName',
 			},
 			fatal_flags      => {},
 			perror_not_fatal => 0,
 		},
-		backend   => undef,
-		options   => {},
-		ports     => [],
-		protocols => [],
-		testing   => undef,
-		test_data => undef,
-		prefix    => 'kur',
-		postfix   => undef,
+		backend     => undef,
+		options     => {},
+		ports       => [],
+		protocols   => [],
+		testing     => undef,
+		test_data   => undef,
+		prefix      => 'kur',
+		postfix     => undef,
+		backend_obj => undef,
 	};
 	bless $self;
 
@@ -159,20 +178,19 @@ sub new {
 		$self->{prefix} = $opts{prefix};
 	}
 
-	# make sure we have a postfix and that it is valid
-	if ( !defined( $opts{postfix} ) ) {
+	# make sure we have a name and that it is valid
+	if ( !defined( $opts{name} ) ) {
 		$self->{perror}      = 1;
 		$self->{error}       = 6;
-		$self->{errorString} = 'postfix is undef';
+		$self->{errorString} = 'name is undef';
 		$self->warn;
-	} elsif ( $opts{postfix} !~ /^[a-zA-Z0-9\-]+$/ ) {
-		$self->{perror} = 1;
-		$self->{error}  = 6;
-		$self->{errorString}
-			= 'postfix set to "' . $opts{postfix} . '" which does not match the regexp  /^[a-zA-Z0-9\-]+$/';
+	} elsif ( $opts{name} !~ /^[a-zA-Z0-9\-]+$/ ) {
+		$self->{perror}      = 1;
+		$self->{error}       = 6;
+		$self->{errorString} = 'name set to "' . $opts{name} . '" which does not match the regexp  /^[a-zA-Z0-9\-]+$/';
 		$self->warn;
 	}
-	$self->{postfix} = $opts{postfix};
+	$self->{name} = $opts{name};
 
 	# used internally for testing
 	if ( !defined( $opts{testing} ) ) {
@@ -181,6 +199,34 @@ sub new {
 
 	return $self;
 } ## end sub new
+
+=head2 init_backend
+
+Initiates the backend.
+
+No arguments are taken.
+
+=cut
+
+=head2 ban
+
+Bans the IP or subnet.
+
+=head2 unban
+
+Unbans the IP or subnet.
+
+=head2 list
+
+List banned IPs or subnets.
+
+=head2 re_init
+
+Tells the backend to re-init it's self.
+
+=head2 teardown
+
+Tears down the setup for the backend.
 
 =head1 ERROR CODES / FLAGS
 
@@ -208,10 +254,9 @@ Port is either not a positive int or a name that can be resolved by getservbynam
 
 The specified prefix did not match /^[a-zA-Z0-9]+$/.
 
-=head2 7, invalidPostfix
+=head2 7, invalidName
 
-The postfix is either undef or does not match /^[a-zA-Z0-9\-]+$/.
-
+The name is either undef or does not match /^[a-zA-Z0-9\-]+$/.
 
 =head1 AUTHOR
 

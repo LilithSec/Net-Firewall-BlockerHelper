@@ -8,3 +8,4 @@ t/00-load__Net__Firewall__Blocker.t
 t/manifest.t
 t/pod-coverage.t
 t/pod.t
+t/new.t
