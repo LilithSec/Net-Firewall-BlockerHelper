@@ -94,7 +94,8 @@ sub new {
 				4 => 'protocolsNotArray',
 				5 => 'invalidPortSpecified',
 				6 => 'invalidPrefixSpecified',
-				7 => 'invalidName',
+								 7 => 'invalidName',
+								 8 => 'optionsNotHash',
 			},
 			fatal_flags      => {},
 			perror_not_fatal => 0,
@@ -117,6 +118,7 @@ sub new {
 		$self->{errorString} = 'backend is undef';
 		$self->warn;
 	}
+	$self->{backend} = $opts{backend};
 
 	if ( defined( $opts{ports} ) && ref( $opts{ports} ) ne 'ARRAY' ) {
 		$self->{perror}      = 1;
@@ -143,6 +145,7 @@ sub new {
 						= $item . ' could not be resolved to a port name via getservbyname("' . $item . '", "tcp")';
 					$self->warn;
 				}
+				push( @{ $self->{ports} }, $port );
 			} ## end else [ if ( $item =~ /^[0-9]+$/ && $item >= 1 ) ]
 		} ## end foreach my $item ( @{ $opts{ports} } )
 	} ## end elsif ( defined( $opts{ports} ) )
@@ -193,8 +196,18 @@ sub new {
 	$self->{name} = $opts{name};
 
 	# used internally for testing
-	if ( !defined( $opts{testing} ) ) {
+	if ( defined( $opts{testing} ) ) {
 		$self->{testing} = $opts{testing};
+	}
+
+	if (defined($opts{options})) {
+		if (ref($opts{options}) ne 'HASH') {
+					$self->{perror}      = 1;
+					$self->{error}       = 8;
+					$self->{errorString} = 'ref for options is "'.ref($opts{options}).'" and not HASH';
+					$self->warn;
+		}
+		$self->{options}=$opts{options};
 	}
 
 	return $self;
@@ -257,6 +270,10 @@ The specified prefix did not match /^[a-zA-Z0-9]+$/.
 =head2 7, invalidName
 
 The name is either undef or does not match /^[a-zA-Z0-9\-]+$/.
+
+=head2 8, optionsNotHash
+
+The item passed to new for options is not a hash.
 
 =head1 AUTHOR
 
