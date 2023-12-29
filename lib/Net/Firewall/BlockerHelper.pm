@@ -88,14 +88,23 @@ sub new {
 		errorExtra    => {
 			all_errors_fatal => 1,
 			flags            => {
-				1 => 'noBackendSpecified',
-				2 => 'invalidPortSpecified',
-				3 => 'portsNotArray',
-				4 => 'protocolsNotArray',
-				5 => 'invalidPortSpecified',
-				6 => 'invalidPrefixSpecified',
-								 7 => 'invalidName',
-								 8 => 'optionsNotHash',
+				1  => 'noBackendSpecified',
+				2  => 'invalidPortSpecified',
+				3  => 'portsNotArray',
+				4  => 'protocolsNotArray',
+				5  => 'invalidPortSpecified',
+				6  => 'invalidPrefixSpecified',
+				7  => 'invalidName',
+				8  => 'optionsNotHash',
+				9  => 'noBanItem',
+				10 => 'banItemNotIP',
+				11 => 'invalidBackend',
+				12 => 'backendInitError',
+				13 => 'banFailed',
+				14 => 'unbanFailed',
+				15 => 'listFailed',
+				16 => 'reInitFailed',
+				17 => 'teardownFailed',
 			},
 			fatal_flags      => {},
 			perror_not_fatal => 0,
@@ -119,6 +128,14 @@ sub new {
 		$self->warn;
 	}
 	$self->{backend} = $opts{backend};
+
+	if ( $self->{backend} !~ /^[a-zA-Z0-9\_]+$/ ) {
+		$self->{perror} = 11;
+		$self->{error}  = 1;
+		$self->{errorString}
+			= '"' . $self->{backend} . '" does not appear to be valid, the regexp /^[a-zA-Z0-9\_]+$/ does not match';
+		$self->warn;
+	}
 
 	if ( defined( $opts{ports} ) && ref( $opts{ports} ) ne 'ARRAY' ) {
 		$self->{perror}      = 1;
@@ -200,14 +217,14 @@ sub new {
 		$self->{testing} = $opts{testing};
 	}
 
-	if (defined($opts{options})) {
-		if (ref($opts{options}) ne 'HASH') {
-					$self->{perror}      = 1;
-					$self->{error}       = 8;
-					$self->{errorString} = 'ref for options is "'.ref($opts{options}).'" and not HASH';
-					$self->warn;
+	if ( defined( $opts{options} ) ) {
+		if ( ref( $opts{options} ) ne 'HASH' ) {
+			$self->{perror}      = 1;
+			$self->{error}       = 8;
+			$self->{errorString} = 'ref for options is "' . ref( $opts{options} ) . '" and not HASH';
+			$self->warn;
 		}
-		$self->{options}=$opts{options};
+		$self->{options} = $opts{options};
 	}
 
 	return $self;
@@ -221,25 +238,183 @@ No arguments are taken.
 
 =cut
 
+sub init_backend {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	my $backend = 'Net::Firewall::BlockerHelper::' . $self->{backend};
+	my $backend_obj;
+	my $init_string = 'use ' . $backend . '; $backend_obj=' . $backend . '->new( options=>$self->{options} );';
+	eval($init_string);
+	if ($@) {
+		$self->{perror}      = 1;
+		$self->{error}       = 12;
+		$self->{errorString} = 'Failed to init backend... ' . $@;
+		$self->warn;
+	}
+	# make sure we got something that is defined and is a object of some sort
+	if ( !defined($backend_obj) ) {
+		$self->{perror}      = 1;
+		$self->{error}       = 12;
+		$self->{errorString} = 'Failed to init backend. Eval did not die, but returned value is undef';
+		$self->warn;
+	} elsif ( ref($backend_obj) eq '' || ref($backend_obj) eq 'ARRAY' || ref($backend_obj) eq 'HASH' ) {
+		$self->{perror}      = 1;
+		$self->{error}       = 12;
+		$self->{errorString} = 'ref($backend_obj) is "' . ref($backend_obj) . '"';
+		$self->warn;
+	}
+
+	$self->{backend_obj} = $backend_obj;
+} ## end sub init_backend
+
 =head2 ban
 
-Bans the IP or subnet.
+Bans the IP.
+
+    $fw_helper->ban(ban => $ip);
+
+=cut
+
+sub ban {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( !defined( $opts{ban} ) ) {
+		$self->{error}       = 9;
+		$self->{errorString} = 'Nothing specified for the value ban';
+		$self->warn;
+		return;
+	} elsif ( ref( $opts{ban} ) ne '' ) {
+		$self->{error}       = 10;
+		$self->{errorString} = 'Bad ref type for ban... ref is "' . ref( $opts{ban} ) . '"';
+		$self->warn;
+		return;
+	} elsif ( $opts{ban} !~ /$IPv4_re/
+		&& $opts{ban} !~ /$IPv6_re/ )
+	{
+		$self->{error}       = 10;
+		$self->{errorString} = 'ban item,"' . $opts{ban} . '", does not appear to be a IPv4 or IPv6 IP';
+		$self->warn;
+		return;
+	}
+
+	eval { $self->{backend_obj}->ban( ban => $opts{ban} ); };
+	if ($@) {
+		$self->{error}       = 13;
+		$self->{errorString} = 'banning item,"' . $opts{ban} . '", failed... ' . $@;
+		$self->warn;
+		return;
+	}
+} ## end sub ban
 
 =head2 unban
 
-Unbans the IP or subnet.
+Unbans the an IP.
+
+    $fw_helper->ban(ban => $ip);
+
+=cut
+
+sub unban {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( !defined( $opts{ban} ) ) {
+		$self->{error}       = 9;
+		$self->{errorString} = 'Nothing specified for the value ban';
+		$self->warn;
+		return;
+	} elsif ( ref( $opts{ban} ) ne '' ) {
+		$self->{error}       = 10;
+		$self->{errorString} = 'Bad ref type for ban... ref is "' . ref( $opts{ban} ) . '"';
+		$self->warn;
+		return;
+	} elsif ( $opts{ban} !~ /$IPv4_re/
+		&& $opts{ban} !~ /$IPv6_re/ )
+	{
+		$self->{error}       = 10;
+		$self->{errorString} = 'ban item,"' . $opts{ban} . '", does not appear to be a IPv4 or IPv6 IP';
+		$self->warn;
+		return;
+	}
+
+	eval { $self->{backend_obj}->unban( ban => $opts{ban} ); };
+	if ($@) {
+		$self->{error}       = 14;
+		$self->{errorString} = 'unbanning item,"' . $opts{ban} . '", failed... ' . $@;
+		$self->warn;
+		return;
+	}
+} ## end sub unban
 
 =head2 list
 
-List banned IPs or subnets.
+List banned IPs.
+
+    my @banned = $fw_helper->list;
+
+=cut
+
+sub list {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	my @banned;
+	eval { @banned = $self->{backend_obj}->list; };
+	if ($@) {
+		$self->{error}       = 15;
+		$self->{errorString} = 'listing bans failed... ' . $@;
+		$self->warn;
+		return;
+	}
+
+	return @banned;
+} ## end sub list
 
 =head2 re_init
 
 Tells the backend to re-init it's self.
 
+=cut
+
+sub re_init {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	eval { $self->{backend_obj}->re_init; };
+	if ($@) {
+		$self->{error}       = 16;
+		$self->{errorString} = 'backend re_init failed... ' . $@;
+		$self->warn;
+		return;
+	}
+} ## end sub re_init
+
 =head2 teardown
 
 Tears down the setup for the backend.
+
+=cut
+
+sub teardown {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	eval { $self->{backend_obj}->teardown; };
+	if ($@) {
+		$self->{error}       = 17;
+		$self->{errorString} = 'backend teardown failed... ' . $@;
+		$self->warn;
+		return;
+	}
+} ## end sub teardown
 
 =head1 ERROR CODES / FLAGS
 
@@ -274,6 +449,44 @@ The name is either undef or does not match /^[a-zA-Z0-9\-]+$/.
 =head2 8, optionsNotHash
 
 The item passed to new for options is not a hash.
+
+=head2 9, noBanItem
+
+No IP specified to ban.
+
+=head2 10, banItemNotIP
+
+The item to ban is not an IP. Either wrong ref type or regexp
+test using L<Regexp::IPv4> and L<Regexp::IPv6> failed.
+
+=head2 11, invalidBackend
+
+The specified backend failed to pass a basic sanity check of making sure it
+matches the regexp /^[a-zA-Z0-9\_]+$/.
+
+=head2 12, backendInitError
+
+Failed to init the backend.
+
+=head2 13, banFailed
+
+Failed to ban the item.
+
+=head2 14, unbanFailed
+
+Failed to unban the item.
+
+=head2 15, listFailed
+
+Failed get a list of bans.
+
+=head2 16, reInitFailed
+
+Failed to re_init the backend.
+
+=head2 17, teardownFailed
+
+Failed to teardown the backend.
 
 =head1 AUTHOR
 
