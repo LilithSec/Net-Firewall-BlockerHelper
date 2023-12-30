@@ -1,5 +1,6 @@
 Changes
 lib/Net/Firewall/BlockerHelper.pm
+lib/Net/Firewall/BlockerHelper/backends/dummy.pm
 Makefile.PL
 MANIFEST			This list of files
 README.md
