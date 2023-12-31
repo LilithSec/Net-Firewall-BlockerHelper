@@ -243,9 +243,20 @@ sub init_backend {
 
 	$self->errorblank;
 
-	my $backend = 'Net::Firewall::BlockerHelper::' . $self->{backend};
+	my $backend = 'Net::Firewall::BlockerHelper::backends::' . $self->{backend};
 	my $backend_obj;
-	my $init_string = 'use ' . $backend . '; $backend_obj=' . $backend . '->new( options=>$self->{options} );';
+	my $init_string
+		= 'use '
+		. $backend
+		. '; $backend_obj='
+		. $backend
+		. '->new('
+		. 'options=>$self->{options}, '
+		. 'ports=>$self->{ports}, '
+		. 'protocols=>$self->{protocols}, '
+		. 'testing=>$self->{testing}, '
+		. 'prefix=>$self->{prefix}, '
+		. 'postfix=>$self->{postfix}, ' . ');';
 	eval($init_string);
 	if ($@) {
 		$self->{perror}      = 1;
