@@ -116,7 +116,7 @@ sub new {
 		testing     => undef,
 		test_data   => undef,
 		prefix      => 'kur',
-		name     => undef,
+		name        => undef,
 		backend_obj => undef,
 	};
 	bless $self;
@@ -133,7 +133,9 @@ sub new {
 		$self->{perror} = 11;
 		$self->{error}  = 1;
 		$self->{errorString}
-			= '"' . $self->{backend} . '" does not appear to be valid backend, the regexp /^[a-zA-Z0-9\_]+$/ does not match';
+			= '"'
+			. $self->{backend}
+			. '" does not appear to be valid backend, the regexp /^[a-zA-Z0-9\_]+$/ does not match';
 		$self->warn;
 	}
 
@@ -147,7 +149,7 @@ sub new {
 		foreach my $item ( @{ $opts{ports} } ) {
 			if ( $item =~ /^[0-9]+$/ && $item >= 1 ) {
 				#push( @{ $self->{ports} }, $item );
-				$ports{$item}=1;
+				$ports{$item} = 1;
 			} elsif ( $item =~ /^[0-9]+$/ && $item < 1 ) {
 				$self->{perror} = 1;
 				$self->{error}  = 2;
@@ -164,13 +166,13 @@ sub new {
 						= $item . ' could not be resolved to a port name via getservbyname("' . $item . '", "tcp")';
 					$self->warn;
 				}
-				$ports{$port}=1;
+				$ports{$port} = 1;
 				#push( @{ $self->{ports} }, $port );
 			} ## end else [ if ( $item =~ /^[0-9]+$/ && $item >= 1 ) ]
-		}
-		my @port_keys=keys(%ports);
-		@port_keys=sort {$a <=> $b} @port_keys;
-		push(@{ $self->{ports}}, @port_keys);
+		} ## end foreach my $item ( @{ $opts{ports} } )
+		my @port_keys = keys(%ports);
+		@port_keys = sort { $a <=> $b } @port_keys;
+		push( @{ $self->{ports} }, @port_keys );
 		## end foreach my $item ( @{ $opts{ports} } )
 	} ## end elsif ( defined( $opts{ports} ) )
 
@@ -191,11 +193,11 @@ sub new {
 					= $item . ' could not be resolved to a port name via getservbyname("' . $item . '", "tcp")';
 				$self->warn;
 			}
-			$protocols{$item}=1;
+			$protocols{$item} = 1;
 		} ## end foreach my $item ( @{ $opts{protocols} } )
-		my @protocols_keys=keys(%protocols);
-		@protocols_keys=sort {$a cmp $b} @protocols_keys;
-		push(@{ $self->{protocols}}, @protocols_keys);
+		my @protocols_keys = keys(%protocols);
+		@protocols_keys = sort { $a cmp $b } @protocols_keys;
+		push( @{ $self->{protocols} }, @protocols_keys );
 	} ## end elsif ( defined( $opts{protocols} ) )
 
 	# make sure prefix is sane if defiend
@@ -253,6 +255,7 @@ sub init_backend {
 	my ( $self, %opts ) = @_;
 
 	$self->errorblank;
+	$self->{test_data}=undef;
 
 	my $backend = 'Net::Firewall::BlockerHelper::backends::' . $self->{backend};
 	my $backend_obj;
@@ -267,7 +270,9 @@ sub init_backend {
 		. 'protocols=>$self->{protocols}, '
 		. 'testing=>$self->{testing}, '
 		. 'prefix=>$self->{prefix}, '
-		. 'name=>$self->{name}, ' . ');';
+		. 'name=>$self->{name}, '
+		. 'frontend_obj=>$self, '
+		. '); $backend_obj->init;';
 	eval($init_string);
 	if ($@) {
 		$self->{perror}      = 1;
@@ -303,6 +308,7 @@ sub ban {
 	my ( $self, %opts ) = @_;
 
 	$self->errorblank;
+	$self->{test_data}=undef;
 
 	if ( !defined( $opts{ban} ) ) {
 		$self->{error}       = 9;
@@ -344,6 +350,7 @@ sub unban {
 	my ( $self, %opts ) = @_;
 
 	$self->errorblank;
+	$self->{test_data}=undef;
 
 	if ( !defined( $opts{ban} ) ) {
 		$self->{error}       = 9;
@@ -385,6 +392,7 @@ sub list {
 	my ( $self, %opts ) = @_;
 
 	$self->errorblank;
+	$self->{test_data}=undef;
 
 	my @banned;
 	eval { @banned = $self->{backend_obj}->list; };
@@ -408,6 +416,7 @@ sub re_init {
 	my ( $self, %opts ) = @_;
 
 	$self->errorblank;
+	$self->{test_data}=undef;
 
 	eval { $self->{backend_obj}->re_init; };
 	if ($@) {
@@ -428,6 +437,7 @@ sub teardown {
 	my ( $self, %opts ) = @_;
 
 	$self->errorblank;
+	$self->{test_data}=undef;
 
 	eval { $self->{backend_obj}->teardown; };
 	if ($@) {

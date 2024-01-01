@@ -6,7 +6,9 @@ MANIFEST			This list of files
 README.md
 LICENSE
 t/00-load__Net__Firewall__Blocker.t
+t/01-load__Net__Firewall__Blocker__backends__dummy.t
 t/manifest.t
 t/pod-coverage.t
 t/pod.t
 t/new.t
+t/dummy.t

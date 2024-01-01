@@ -208,6 +208,9 @@ sub new {
 	if ( defined( $opts{testing} ) ) {
 		$self->{testing} = $opts{testing};
 	}
+	if ( defined( $opts{frontend_obj} ) ) {
+		$self->{frontend_obj} = $opts{frontend_obj};
+	}
 
 	if ( defined( $opts{options} ) ) {
 		if ( ref( $opts{options} ) ne 'HASH' ) {
@@ -222,7 +225,7 @@ sub new {
 	return $self;
 } ## end sub new
 
-=head2 init_backend
+=head2 init
 
 Initiates the backend.
 
@@ -230,7 +233,7 @@ No arguments are taken.
 
 =cut
 
-sub init_backend {
+sub init {
 	my ( $self, %opts ) = @_;
 
 	$self->errorblank;
@@ -239,6 +242,10 @@ sub init_backend {
 		$self->{error}       = 18;
 		$self->{errorString} = 'backend has already been inited';
 		$self->warn;
+	}
+
+	if ($self->{testing}) {
+		$self->{frontend_obj}->{test_data}='inited';
 	}
 
 	$self->{inited} = 1;
@@ -283,6 +290,8 @@ sub ban {
 		return;
 	}
 
+	$self->{frontend_obj}->{test_data}='banned '.$opts{ban};
+
 	$self->{banned}{ $opts{ban} } = 1;
 } ## end sub ban
 
@@ -325,6 +334,8 @@ sub unban {
 		return;
 	}
 
+	$self->{frontend_obj}->{test_data}='unbanned '.$opts{ban};
+
 	delete( $self->{banned}{ $opts{ban} } );
 } ## end sub unban
 
@@ -341,6 +352,8 @@ sub list {
 
 	$self->errorblank;
 
+	$self->{frontend_obj}->{test_data}='list';
+
 	return keys( %{ $self->{banned} } );
 }
 
@@ -355,7 +368,9 @@ sub re_init {
 
 	$self->errorblank;
 
-	$self->{inited} = 1,;
+	$self->{frontend_obj}->{test_data}='re_inited';
+
+	$self->{inited} = 1;
 }
 
 =head2 teardown
@@ -369,8 +384,11 @@ sub teardown {
 
 	$self->{inited} = 0,
 
-		$self->errorblank;
+	$self->errorblank;
 
+	$self->{frontend_obj}->{test_data}='toredown';
+
+	$self->{inited} = 0;
 }
 
 =head1 ERROR CODES / FLAGS
