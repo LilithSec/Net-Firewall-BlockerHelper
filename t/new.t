@@ -18,7 +18,7 @@ my $worked = 0;
 eval {
 	my $fw_helper = Net::Firewall::BlockerHelper->new(
 		backend   => 'ipfw',
-		ports     => [ '22',  'ssh' ],
+		ports     => [ '22',  'ssh', '153'],
 		protocols => [ 'tcp', 'udp' ],
 		prefix    => 'derp',
 		name      => 'ssh',
@@ -76,8 +76,8 @@ eval {
 		die('$fw_helper->{ports}[1] is undef');
 	} elsif ( $fw_helper->{ports}[0] ne '22' ) {
 		die('$fw_helper->{ports}[0] ne 22');
-	} elsif ( $fw_helper->{ports}[1] ne '22' ) {
-		die('$fw_helper->{ports}[1] ne 22');
+	} elsif ( $fw_helper->{ports}[1] ne '153' ) {
+		die('$fw_helper->{ports}[1] ne 153');
 	}
 
 	eval {

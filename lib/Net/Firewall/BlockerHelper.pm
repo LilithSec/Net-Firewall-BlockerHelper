@@ -116,7 +116,7 @@ sub new {
 		testing     => undef,
 		test_data   => undef,
 		prefix      => 'kur',
-		postfix     => undef,
+		name     => undef,
 		backend_obj => undef,
 	};
 	bless $self;
@@ -133,7 +133,7 @@ sub new {
 		$self->{perror} = 11;
 		$self->{error}  = 1;
 		$self->{errorString}
-			= '"' . $self->{backend} . '" does not appear to be valid, the regexp /^[a-zA-Z0-9\_]+$/ does not match';
+			= '"' . $self->{backend} . '" does not appear to be valid backend, the regexp /^[a-zA-Z0-9\_]+$/ does not match';
 		$self->warn;
 	}
 
@@ -143,9 +143,11 @@ sub new {
 		$self->{errorString} = 'ports is defined and type is not array but "' . ref( $opts{ports} ) . '"';
 		$self->warn;
 	} elsif ( defined( $opts{ports} ) ) {
+		my %ports;
 		foreach my $item ( @{ $opts{ports} } ) {
 			if ( $item =~ /^[0-9]+$/ && $item >= 1 ) {
-				push( @{ $self->{ports} }, $item );
+				#push( @{ $self->{ports} }, $item );
+				$ports{$item}=1;
 			} elsif ( $item =~ /^[0-9]+$/ && $item < 1 ) {
 				$self->{perror} = 1;
 				$self->{error}  = 2;
@@ -162,9 +164,14 @@ sub new {
 						= $item . ' could not be resolved to a port name via getservbyname("' . $item . '", "tcp")';
 					$self->warn;
 				}
-				push( @{ $self->{ports} }, $port );
+				$ports{$port}=1;
+				#push( @{ $self->{ports} }, $port );
 			} ## end else [ if ( $item =~ /^[0-9]+$/ && $item >= 1 ) ]
-		} ## end foreach my $item ( @{ $opts{ports} } )
+		}
+		my @port_keys=keys(%ports);
+		@port_keys=sort {$a <=> $b} @port_keys;
+		push(@{ $self->{ports}}, @port_keys);
+		## end foreach my $item ( @{ $opts{ports} } )
 	} ## end elsif ( defined( $opts{ports} ) )
 
 	if ( defined( $opts{protocols} ) && ref( $opts{protocols} ) ne 'ARRAY' ) {
@@ -173,6 +180,7 @@ sub new {
 		$self->{errorString} = 'protocols is defined and type is not array but "' . ref( $opts{protocols} ) . '"';
 		$self->warn;
 	} elsif ( defined( $opts{protocols} ) ) {
+		my %protocols;
 		foreach my $item ( @{ $opts{protocols} } ) {
 			my ( $name, $aliases, $proto ) = getprotobyname($item);
 			# if this is undef, it means it is not a known protocol
@@ -183,8 +191,11 @@ sub new {
 					= $item . ' could not be resolved to a port name via getservbyname("' . $item . '", "tcp")';
 				$self->warn;
 			}
-			push( @{ $self->{protocols} }, $item );
+			$protocols{$item}=1;
 		} ## end foreach my $item ( @{ $opts{protocols} } )
+		my @protocols_keys=keys(%protocols);
+		@protocols_keys=sort {$a cmp $b} @protocols_keys;
+		push(@{ $self->{protocols}}, @protocols_keys);
 	} ## end elsif ( defined( $opts{protocols} ) )
 
 	# make sure prefix is sane if defiend
@@ -256,7 +267,7 @@ sub init_backend {
 		. 'protocols=>$self->{protocols}, '
 		. 'testing=>$self->{testing}, '
 		. 'prefix=>$self->{prefix}, '
-		. 'postfix=>$self->{postfix}, ' . ');';
+		. 'name=>$self->{name}, ' . ');';
 	eval($init_string);
 	if ($@) {
 		$self->{perror}      = 1;
