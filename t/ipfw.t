@@ -137,8 +137,9 @@ eval {
 	$fw_helper->re_init;
 	if ( !defined( $fw_helper->{test_data} ) ) {
 		die('Backend did not set $fw_helper->{test_data}');
-	} elsif ( $fw_helper->{test_data} ne 're_inited' ) {
-		die('($fw_helper->{test_data} ne "re_inited"');
+	} elsif ( $fw_helper->{test_data}[0] ne 'ipfw table derp_ssh add 5.6.7.8' ) {
+		die( '($fw_helper->{test_data}[0] ne "ipfw table derp_ssh add 5.6.7.8"... '
+				. Dumper( $fw_helper->{test_data} ) );
 	}
 
 	$fw_helper->teardown;

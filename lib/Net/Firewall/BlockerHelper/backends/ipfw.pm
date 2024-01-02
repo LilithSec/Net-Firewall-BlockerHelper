@@ -563,10 +563,34 @@ sub re_init {
 
 	$self->errorblank;
 
-	$self->{frontend_obj}->{test_data} = 're_inited';
+	$self->teardown;
+	$self->init;
+
+	my @to_ban = keys( %{ $self->{banned} } );
+
+	my @re_init_test_data;
+	foreach my $item (@to_ban) {
+		my $command = 'ipfw table ' . $self->{prefix} . '_' . $self->{name} . ' add ' . $item;
+
+		if ( $self->{testing} ) {
+			push( @re_init_test_data, $command );
+		} else {
+			my $output = `$command 2>&1`;
+			if ( $? ne '0' ) {
+				$self->{error} = 13;
+				$self->{errorString}
+					= 'ban failed. non-zero exit code for the command... "' . $command . '"... output... ' . $output;
+				$self->warn;
+			}
+		}
+	} ## end foreach my $item (@to_ban)
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = \@re_init_test_data;
+	}
 
 	$self->{inited} = 1;
-}
+} ## end sub re_init
 
 =head2 teardown
 
@@ -577,9 +601,9 @@ Tears down the setup for the backend.
 sub teardown {
 	my ( $self, %opts ) = @_;
 
-	$self->{inited} = 0,
+	$self->errorblank;
 
-		$self->errorblank;
+	$self->{inited} = 0;
 
 	$self->{frontend_obj}->{test_data} = {};
 
