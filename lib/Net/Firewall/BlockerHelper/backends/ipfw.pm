@@ -581,9 +581,25 @@ sub teardown {
 
 		$self->errorblank;
 
-	$self->{frontend_obj}->{test_data} = 'toredown';
+	$self->{frontend_obj}->{test_data} = {};
 
-	$self->{inited} = 0;
+	my @commands;
+	push( @commands, 'ipfw table ' . $self->{prefix} . '_' . $self->{name} . ' destroy' );
+	push( @commands, 'ipfw delete ' . $self->{options}{rule} );
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = \@commands;
+	} else {
+		foreach my $item (@commands) {
+			my $output = `$item  2>&1`;
+			if ( $? ne '0' ) {
+				$self->{error} = 17;
+				$self->{errorString}
+					= 'teardown failed. non-zero exit code for the command... "' . $item . '"... output... ' . $output;
+				$self->warn;
+			}
+		}
+	} ## end else [ if ( $self->{testing} ) ]
 } ## end sub teardown
 
 =head1 ERROR CODES / FLAGS

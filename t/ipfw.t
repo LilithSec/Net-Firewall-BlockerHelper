@@ -144,8 +144,11 @@ eval {
 	$fw_helper->teardown;
 	if ( !defined( $fw_helper->{test_data} ) ) {
 		die('Backend did not set $fw_helper->{test_data}');
-	} elsif ( $fw_helper->{test_data} ne 'toredown' ) {
-		die('($fw_helper->{test_data} ne "toredown"');
+	} elsif ( $fw_helper->{test_data}[0] ne 'ipfw table derp_ssh destroy' ) {
+		die( '($fw_helper->{test_data}[0] ne "ipfw table derp_ssh destroy"... '
+				. Dumper( $fw_helper->{test_data} ) );
+	} elsif ( $fw_helper->{test_data}[1] ne 'ipfw delete 150' ) {
+		die( '($fw_helper->{test_data}[1] ne "ipfw delete 150"... ' . Dumper( $fw_helper->{test_data} ) );
 	} elsif ( $backend_obj->{inited} ) {
 		die('($backend_obj->{inited} true when it should not be');
 	}
