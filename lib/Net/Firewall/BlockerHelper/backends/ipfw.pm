@@ -9,7 +9,7 @@ use Regexp::IPv6 qw($IPv6_re);
 
 =head1 NAME
 
-Net::Firewall::BlockerHelper::backends::ipfw - IPFW backend
+Net::Firewall::BlockerHelper::backends::ipfw - IPFW backend for Net::Firewall::BlockerHelper.
 
 =head1 VERSION
 
@@ -23,9 +23,59 @@ our $VERSION = '0.0.1';
 
     use Net::Firewall::BlockerHelper::backends::ipfw;
 
-    my $fw_helper = Net::Firewall::BlockerHelper::backends::ipfw->new();
-    ...
+    my $backend1;
+    my $backend2;
+    eval {
+        $backend1 = Net::Firewall::BlockerHelper::backends::ipfw->new(
+                backend => 'ipfw',
+                name => 'all',
+                options=>{ rule=>150 },
+            );
+        $backend2 = Net::Firewall::BlockerHelper::backends::ipfw->new(
+                backend => 'ipfw',
+                ports => ['143'],
+                protocols => ['tcp'],
+                name => 'imap',
+                options=>{ rule=>151 },
+            );
+    };
+    if ($@) {
+        print 'Error: '
+            . $Error::Helper::error
+            . "\nError String: "
+            . $Error::Helper::errorString
+            . "\nError Flag: "
+            . $Error::Helper::errorFlag . "\n";
+    }
 
+    print `ipfw list`
+
+    $backend1->init;
+    $backend2->init;
+
+    print `ipfw list`
+
+    $backend1->ban(ban=>'1.2.3.4');
+    $backend1->ban(ban=>'4.3.2.1');
+    $backend2->ban(ban=>'4.3.2.1');
+
+    use Data::Dumper;
+    print Dumper($backend1->list);
+    print Dumper($backend2->list);
+
+    $backend1->unban(ban=>'4.3.2.1');
+
+    use Data::Dumper;
+    print Dumper($backend1->list);
+    print Dumper($backend2->list);
+
+    $backend1->teardown;
+
+    print `ipfw list`
+
+    $backend2->teardown;
+
+    print `ipfw list`
 
 =head1 METHODS
 
@@ -34,28 +84,49 @@ our $VERSION = '0.0.1';
 Initiates the the object.
 
     - options :: Backend specific options that will be passed to the backend unchecked
-            outside of making sure it is a hash ref if defined.
+            outside of making sure it is a hash ref if defined. See below for furhter info.
         - Default :: {}
 
     - ports :: A array of ports to block. Checked to make sure they are positive ints or a valid
-            service name via getservbyname.
+            service name via getservbyname. All ports will be blocked if non are specified. If
+            duplicates are removed.
         - Default :: []
 
     - protocols :: A array of protocols to block. By default will block all. This
-            is checked against /etc/protocols via the function getprotobyname.
-        - Default :: []
+            is checked against /etc/protocols via the function getprotobyname. Duplicates
+            will be discarded.
+        - Default :: ['ip']
 
     - prefix :: Prefix to use. Must match the regex /^[a-zA-Z0-9]+$/
         - default :: kur
 
-    - name :: Name of this specific instance.
+    - name :: Name of this specific instance. This must be specified.
         - default :: undef
+
+The options hash accepts the following.
+
+    - rule :: The rule name to use for the IPFW rule. This should not
+            re-used or it will result in the other rules being removed
+            when init is called.
+        - Default :: 150
+
+    - type :: The drop method to use. Should either be 'deny',
+            'unreach', or 'unreach6'. See ipfw(8) for more info.
+        - Default :: deny
+
+    - unreach :: The if using unreach, the unreach type to use.
+            See ipfw(8) for more info.
+        - Default :: port
+
+    - unreach6 :: The if using unreach, the unreach type to use.
+            See ipfw(8) for more info.
+        - Default :: port
 
 All errors are considered fatal, meaning if new fails it will die.
 
-    my $fw_helper;
+    my $backend;
     eval {
-        $fw_helper = Net::Firewall::BlockerHelper::backends::ipfw->new(
+        $backend = Net::Firewall::BlockerHelper::backends::ipfw->new(
                 backend => 'ipfw',
                 ports => ['22'],
                 protocols => ['tcp'],
@@ -333,9 +404,14 @@ sub new {
 
 =head2 init
 
-Initiates the backend.
+Initiates the backend. This will attempt to drop the rule number and table
+prior to re-adding them.
 
 No arguments are taken.
+
+May called a second time, it will error.
+
+    $backend->init;
 
 =cut
 
@@ -556,12 +632,24 @@ sub list {
 
 Tells the backend to re-init it's self.
 
+This will call teardown and init again. After that it will
+re-added all previously added bans.
+
+    $backend->re_init;
+
 =cut
 
 sub re_init {
 	my ( $self, %opts ) = @_;
 
 	$self->errorblank;
+
+	if ( !$self->{inited} ) {
+		$self->{error}       = 1;
+		$self->{errorString} = 'backend has not been inited';
+		$self->warn;
+		return;
+	}
 
 	$self->teardown;
 	$self->init;
@@ -595,6 +683,13 @@ sub re_init {
 =head2 teardown
 
 Tears down the setup for the backend.
+
+This will delete the table as well as the firewall rule.
+
+If called prior to calling init, this will error. It won't check if it has been
+inited or not.
+
+    $backend->teardown;
 
 =cut
 
