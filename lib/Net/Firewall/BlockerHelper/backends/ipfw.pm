@@ -107,6 +107,7 @@ sub new {
 				20 => 'typeInvalid',
 				21 => 'unreachInvalid',
 				22 => 'unreach6Invalid',
+				23 => 'initFailed',
 			},
 			fatal_flags      => {},
 			perror_not_fatal => 0,
@@ -350,7 +351,61 @@ sub init {
 	}
 
 	if ( $self->{testing} ) {
-		$self->{frontend_obj}->{test_data} = 'inited';
+		$self->{frontend_obj}->{test_data} = {};
+	}
+
+	my $ports;
+	if ( defined( $self->{ports}[0] ) ) {
+		$ports = join( ',', @{ $self->{ports} } );
+	}
+
+	my @protocols;
+	if ( defined( $self->{protocols}[0] ) ) {
+		push( @protocols, @{ $self->{protocols} } );
+	} else {
+		push( @protocols, 'ip' );
+	}
+
+	my @fail_okay_commands;
+	push( @fail_okay_commands, 'ipfw table ' . $self->{prefix} . '_' . $self->{name} . ' destroy' );
+	push( @fail_okay_commands, 'ipfw delete ' . $self->{options}{rule} );
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data}{fail_okay_commands} = \@fail_okay_commands;
+	} else {
+		foreach my $item (@fail_okay_commands) {
+			my $output = `$item  2>&1`;
+		}
+	}
+
+	my @commands;
+	# add the table to create the command
+	push( @commands, 'ipfw table ' . $self->{prefix} . '_' . $self->{name} . ' create' );
+
+	# generates the block rules
+	foreach my $item (@protocols) {
+		my $command = 'ipfw add ' . $self->{options}{rule} . ' ' . $self->{options}{type} . ' ';
+		if ( $self->{options}{type} ne 'deny' ) {
+			$command = $command . $self->{options}{ $self->{options}{type} } . ' ';
+		}
+		$command = $command . $item.' from "table(' . $self->{prefix} . '_' . $self->{name} . ')" to me';
+		if ( defined($ports) ) {
+			$command = $command . ' ' . $ports;
+		}
+		push( @commands, $command );
+	} ## end foreach my $item (@protocols)
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data}{commands} = \@commands;
+	} else {
+		foreach my $item (@fail_okay_commands) {
+			my $output = `$item 2>&1`;
+			if ( $? ne 0 ) {
+				$self->{error}  = 22;
+				$self->{errorString}='init failed. non-zero exit code for the dommand... "'.$item.'"... output... '.$output;
+				$self->warn;
+			}
+		}
 	}
 
 	$self->{inited} = 1;
@@ -589,6 +644,10 @@ value unstood by unreach for ipfw(8).
 
 The value for the uncreach6 option is invalid. Should be of a
 value unstood by unreach6 for ipfw(8).
+
+=head2 23, initFailed
+
+One of the required commands for init failed.
 
 =head1 AUTHOR
 

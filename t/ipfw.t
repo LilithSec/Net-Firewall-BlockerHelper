@@ -38,11 +38,11 @@ eval {
 
 	my $backend_obj = $fw_helper->{backend_obj};
 
-	if (!defined($backend_obj->{options})) {
+	if ( !defined( $backend_obj->{options} ) ) {
 		die('$backend_obj->{options} is undef');
-	}elsif (ref($backend_obj->{options}) ne 'HASH') {
-		die('ref($backend_obj->{options}) ne "HASH", but "'.ref($backend_obj->{options}).'",');
-	}elsif (!defined($backend_obj->{options}{rule})) {
+	} elsif ( ref( $backend_obj->{options} ) ne 'HASH' ) {
+		die( 'ref($backend_obj->{options}) ne "HASH", but "' . ref( $backend_obj->{options} ) . '",' );
+	} elsif ( !defined( $backend_obj->{options}{rule} ) ) {
 		die('$backend_obj->{options}{rule} is undef');
 	}
 
@@ -62,60 +62,81 @@ eval {
 
 	if ( !$backend_obj->{inited} ) {
 		die('$backend_obj->{inited} not true');
-	}elsif (!defined($fw_helper->{test_data})) {
+	} elsif ( !defined( $fw_helper->{test_data} ) ) {
 		die('$fw_helper->{test_data} is undef');
-	}elsif ($fw_helper->{test_data} ne 'inited') {
-		die('$fw_helper->{test_data} ne "inited"');
+	} elsif ( !defined( $fw_helper->{test_data}{fail_okay_commands} ) ) {
+		die( '$fw_helper->{test_data}{fail_okay_commands} is undef... ' . Dumper( $fw_helper->{test_data} ) );
+	} elsif ( !defined( $fw_helper->{test_data}{commands} ) ) {
+		die( '$fw_helper->{test_data}{commands} is undef... ' . Dumper( $fw_helper->{test_data} ) );
+	} elsif ( !defined( $fw_helper->{test_data}{commands}[2] ) ) {
+		die( '$fw_helper->{test_data}{commands}[2] is undef... ' . Dumper( $fw_helper->{test_data} ) );
+	} elsif ( !defined( $fw_helper->{test_data}{fail_okay_commands}[1] ) ) {
+		die( '$fw_helper->{test_data}{fail_okay_commands}[1] is undef... ' . Dumper( $fw_helper->{test_data} ) );
+	} elsif ( $fw_helper->{test_data}{fail_okay_commands}[0] ne 'ipfw table derp_ssh destroy' ) {
+		die( '$fw_helper->{test_data}{fail_okay_commands}[0] ne "ipfw table derp_ssh destroy"... '
+				. Dumper( $fw_helper->{test_data} ) );
+	} elsif ( $fw_helper->{test_data}{fail_okay_commands}[1] ne 'ipfw delete 150' ) {
+		die( '$fw_helper->{test_data}{fail_okay_commands}[1] ne "ipfw delete 150"... '
+				. Dumper( $fw_helper->{test_data} ) );
+	} elsif ( $fw_helper->{test_data}{commands}[0] ne 'ipfw table derp_ssh create' ) {
+		die( '$fw_helper->{test_data}{commands}[0] ne "ipfw table derp_ssh create"... '
+				. Dumper( $fw_helper->{test_data} ) );
+	} elsif ( $fw_helper->{test_data}{commands}[1] ne 'ipfw add 150 deny tcp from "table(derp_ssh)" to me 22' ) {
+		die( '$fw_helper->{test_data}{commands}[1] ne "ipfw add 150 deny tcp from \"table(derp_ssh)\" to me 22"... '
+				. Dumper( $fw_helper->{test_data} ) );
+	} elsif ( $fw_helper->{test_data}{commands}[2] ne 'ipfw add 150 deny udp from "table(derp_ssh)" to me 22' ) {
+		die( '$fw_helper->{test_data}{commands}[2] ne "ipfw add 150 deny udp from \"table(derp_ssh)\" to me 22"... '
+				. Dumper( $fw_helper->{test_data} ) );
 	}
 
-	$fw_helper->ban(ban=>'1.2.3.4');
-	if (!defined($fw_helper->{test_data})) {
+	$fw_helper->ban( ban => '1.2.3.4' );
+	if ( !defined( $fw_helper->{test_data} ) ) {
 		die('Backend did not set $fw_helper->{test_data}');
-	}elsif ($fw_helper->{test_data} ne 'banned 1.2.3.4') {
+	} elsif ( $fw_helper->{test_data} ne 'banned 1.2.3.4' ) {
 		die('($fw_helper->{test_data} ne "banned 1.2.3.4"');
 	}
 
-	$fw_helper->ban(ban=>'5.6.7.8');
-	if (!defined($fw_helper->{test_data})) {
+	$fw_helper->ban( ban => '5.6.7.8' );
+	if ( !defined( $fw_helper->{test_data} ) ) {
 		die('Backend did not set $fw_helper->{test_data}');
-	}elsif ($fw_helper->{test_data} ne 'banned 5.6.7.8') {
+	} elsif ( $fw_helper->{test_data} ne 'banned 5.6.7.8' ) {
 		die('($fw_helper->{test_data} ne "banned 1.2.3.4"');
 	}
 
-	my @banned=$fw_helper->list;
-	if ($banned[0] ne "1.2.3.4" && $banned[0] ne "5.6.7.8") {
+	my @banned = $fw_helper->list;
+	if ( $banned[0] ne "1.2.3.4" && $banned[0] ne "5.6.7.8" ) {
 		die('$banned[0] ne "1.2.3.4" && $banned[0] ne "5.6.7.8"');
-	}elsif ($banned[1] ne "1.2.3.4" && $banned[1] ne "5.6.7.8") {
+	} elsif ( $banned[1] ne "1.2.3.4" && $banned[1] ne "5.6.7.8" ) {
 		die('$banned[1] ne "1.2.3.4" && $banned[1] ne "5.6.7.8"');
 	}
 
-	$fw_helper->unban(ban=>'1.2.3.4');
-	if (!defined($fw_helper->{test_data})) {
+	$fw_helper->unban( ban => '1.2.3.4' );
+	if ( !defined( $fw_helper->{test_data} ) ) {
 		die('Backend did not set $fw_helper->{test_data}');
-	}elsif ($fw_helper->{test_data} ne 'unbanned 1.2.3.4') {
+	} elsif ( $fw_helper->{test_data} ne 'unbanned 1.2.3.4' ) {
 		die('($fw_helper->{test_data} ne "unbanned 1.2.3.4"');
 	}
 
-	@banned=$fw_helper->list;
-	if ($banned[0] ne "5.6.7.8") {
+	@banned = $fw_helper->list;
+	if ( $banned[0] ne "5.6.7.8" ) {
 		die('$banned[0] ne "5.6.7.8"');
-	}elsif (defined($banned[1])) {
+	} elsif ( defined( $banned[1] ) ) {
 		die('$banned[1] not undef');
 	}
 
 	$fw_helper->re_init;
-	if (!defined($fw_helper->{test_data})) {
+	if ( !defined( $fw_helper->{test_data} ) ) {
 		die('Backend did not set $fw_helper->{test_data}');
-	}elsif ($fw_helper->{test_data} ne 're_inited') {
+	} elsif ( $fw_helper->{test_data} ne 're_inited' ) {
 		die('($fw_helper->{test_data} ne "re_inited"');
 	}
 
 	$fw_helper->teardown;
-	if (!defined($fw_helper->{test_data})) {
+	if ( !defined( $fw_helper->{test_data} ) ) {
 		die('Backend did not set $fw_helper->{test_data}');
-	}elsif ($fw_helper->{test_data} ne 'toredown') {
+	} elsif ( $fw_helper->{test_data} ne 'toredown' ) {
 		die('($fw_helper->{test_data} ne "toredown"');
-	}elsif ($backend_obj->{inited}) {
+	} elsif ( $backend_obj->{inited} ) {
 		die('($backend_obj->{inited} true when it should not be');
 	}
 
