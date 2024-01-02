@@ -30,10 +30,10 @@ eval {
 
 	if ( !defined( $fw_helper->{backend_obj} ) ) {
 		die('$fw_helper->{backend_obj} is undef');
-	} elsif ( ref( $fw_helper->{backend_obj} ) ne 'Net::Firewall::BlockerHelper::backends::ipfw' ) {
+	} elsif ( ref( $fw_helper->{backend_obj} ) ne 'Net::Firewall::BlockerHelper::backends::pf' ) {
 		die(      'ref($fw_helper->{backend_obj}) is '
 				. ref( $fw_helper->{backend_obj} )
-				. ' and not Net::Firewall::BlockerHelper::backends::ipfw' );
+				. ' and not Net::Firewall::BlockerHelper::backends::pf' );
 	}
 
 	my $backend_obj = $fw_helper->{backend_obj};

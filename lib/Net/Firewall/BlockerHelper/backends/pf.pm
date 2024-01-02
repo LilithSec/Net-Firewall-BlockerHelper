@@ -1,4 +1,4 @@
-package Net::Firewall::BlockerHelper::backends::ipfw;
+package Net::Firewall::BlockerHelper::backends::pf;
 
 use 5.006;
 use strict;
@@ -9,7 +9,7 @@ use Regexp::IPv6 qw($IPv6_re);
 
 =head1 NAME
 
-Net::Firewall::BlockerHelper::backends::ipfw - IPFW backend for Net::Firewall::BlockerHelper.
+Net::Firewall::BlockerHelper::backends::pf - pf backend for Net::Firewall::BlockerHelper.
 
 =head1 VERSION
 
@@ -21,17 +21,17 @@ our $VERSION = '0.0.1';
 
 =head1 SYNOPSIS
 
-    use Net::Firewall::BlockerHelper::backends::ipfw;
+    use Net::Firewall::BlockerHelper::backends::pf;
 
     my $backend1;
     my $backend2;
     eval {
-        $backend1 = Net::Firewall::BlockerHelper::backends::ipfw->new(
+        $backend1 = Net::Firewall::BlockerHelper::backends::pf->new(
                 backend => 'ipfw',
                 name => 'all',
                 options=>{ rule=>150 },
             );
-        $backend2 = Net::Firewall::BlockerHelper::backends::ipfw->new(
+        $backend2 = Net::Firewall::BlockerHelper::backends::pf->new(
                 backend => 'ipfw',
                 ports => ['143'],
                 protocols => ['tcp'],
@@ -83,10 +83,6 @@ our $VERSION = '0.0.1';
 
 Initiates the the object.
 
-    - options :: Backend specific options that will be passed to the backend unchecked
-            outside of making sure it is a hash ref if defined. See below for furhter info.
-        - Default :: {}
-
     - ports :: A array of ports to block. Checked to make sure they are positive ints or a valid
             service name via getservbyname. All ports will be blocked if non are specified. If
             duplicates are removed.
@@ -95,7 +91,7 @@ Initiates the the object.
     - protocols :: A array of protocols to block. By default will block all. This
             is checked against /etc/protocols via the function getprotobyname. Duplicates
             will be discarded.
-        - Default :: ['ip']
+        - Default :: []
 
     - prefix :: Prefix to use. Must match the regex /^[a-zA-Z0-9]+$/
         - default :: kur
@@ -103,30 +99,11 @@ Initiates the the object.
     - name :: Name of this specific instance. This must be specified.
         - default :: undef
 
-The options hash accepts the following.
-
-    - rule :: The rule name to use for the IPFW rule. This should not
-            re-used or it will result in the other rules being removed
-            when init is called.
-        - Default :: 150
-
-    - type :: The drop method to use. Should either be 'deny',
-            'unreach', or 'unreach6'. See ipfw(8) for more info.
-        - Default :: deny
-
-    - unreach :: The if using unreach, the unreach type to use.
-            See ipfw(8) for more info.
-        - Default :: port
-
-    - unreach6 :: The if using unreach, the unreach type to use.
-            See ipfw(8) for more info.
-        - Default :: port
-
 All errors are considered fatal, meaning if new fails it will die.
 
     my $backend;
     eval {
-        $backend = Net::Firewall::BlockerHelper::backends::ipfw->new(
+        $backend = Net::Firewall::BlockerHelper::backends::pf->new(
                 backend => 'ipfw',
                 ports => ['22'],
                 protocols => ['tcp'],
@@ -174,17 +151,12 @@ sub new {
 				16 => 'reInitFailed',
 				17 => 'teardownFailed',
 				18 => 'alreadyInited',
-				19 => 'ruleInvalid',
-				20 => 'typeInvalid',
-				21 => 'unreachInvalid',
-				22 => 'unreach6Invalid',
 				23 => 'initFailed',
 			},
 			fatal_flags      => {},
 			perror_not_fatal => 0,
 		},
 		options => {
-			rule     => 150,
 			type     => 'deny',
 			unreach  => 'port',
 			unreach6 => 'port',
@@ -300,103 +272,6 @@ sub new {
 			$self->warn;
 		}
 		$self->{options} = $opts{options};
-
-		if ( defined( $opts{options}{rule} ) && ref( $opts{options}{rule} ) ne '' ) {
-			$self->{perror}      = 1;
-			$self->{error}       = 19;
-			$self->{errorString} = 'ref for $opts{options}{rule} is "' . ref( $opts{options}{rule} ) . '" and not ""';
-			$self->warn;
-		} elsif ( defined( $opts{options}{rule} ) && $opts{options}{rule} !~ /^[0-9]+$/ ) {
-			$self->{perror}      = 1;
-			$self->{error}       = 19;
-			$self->{errorString} = '$opts{options}{rule} is "' . $opts{options}{rule} . '" and not "150"';
-			$self->warn;
-		} elsif ( defined( $opts{options}{rule} ) && $opts{options}{rule} < 1 ) {
-			$self->{perror}      = 1;
-			$self->{error}       = 19;
-			$self->{errorString} = '$opts{options}{rule} is "' . $opts{options}{rule} . '" is less than 1';
-			$self->warn;
-		} elsif ( !defined( $opts{options}{rule} ) ) {
-			$self->{options}{rule} = 150;
-		}
-
-		if ( defined( $opts{optsions}{type} ) && ref( $opts{options}{type} ) ne '' ) {
-			$self->{perror}      = 1;
-			$self->{error}       = 20;
-			$self->{errorString} = 'ref for $opts{options}{type} is "' . ref( $opts{options}{type} ) . '" and not ""';
-			$self->warn;
-		} elsif ( defined( $opts{optsions}{type} )
-			&& $opts{optsions}{type} ne 'unreach'
-			&& $opts{optsions}{type} ne 'deny'
-			&& $opts{optsions}{type} ne 'unreach6' )
-		{
-			$self->{perror} = 1;
-			$self->{error}  = 20;
-			$self->{errorString}
-				= '$opts{options}{type} is "' . $opts{options}{type} . '" and not "deny", "unreach", or "unreach6"';
-			$self->warn;
-		} elsif ( !defined( $opts{options}{type} ) ) {
-			$self->{options}{type} = 'deny';
-		}
-
-		if ( defined( $opts{optsions}{unreach} ) && ref( $opts{options}{unreach} ) ne '' ) {
-			$self->{perror} = 1;
-			$self->{error}  = 21;
-			$self->{errorString}
-				= 'ref for $opts{options}{unreach} is "' . ref( $opts{options}{unreach} ) . '" and not ""';
-			$self->warn;
-		} elsif ( defined( $opts{optsions}{unreach} )
-			&& $opts{optsions}{unreach} ne 'net'
-			&& $opts{optsions}{unreach} ne 'host'
-			&& $opts{optsions}{unreach} ne 'protocol'
-			&& $opts{optsions}{unreach} ne 'port'
-			&& $opts{optsions}{unreach} ne 'needfrag'
-			&& $opts{optsions}{unreach} ne 'srcfail'
-			&& $opts{optsions}{unreach} ne 'net-unknown'
-			&& $opts{optsions}{unreach} ne 'host-unknown'
-			&& $opts{optsions}{unreach} ne 'isolated'
-			&& $opts{optsions}{unreach} ne 'net-prohib'
-			&& $opts{optsions}{unreach} ne 'host-prohib'
-			&& $opts{optsions}{unreach} ne 'tosnet'
-			&& $opts{optsions}{unreach} ne 'toshost'
-			&& $opts{optsions}{unreach} ne 'filter-prohib'
-			&& $opts{optsions}{unreach} ne 'host-precedence'
-			&& $opts{optsions}{unreach} ne 'precedence-cutoff' )
-		{
-			$self->{perror} = 1;
-			$self->{error}  = 21;
-			$self->{errorString}
-				= '$opts{options}{unreach} is "'
-				. $opts{options}{unreach}
-				. '" and a value understood by ipfw(8) for unreach';
-			$self->warn;
-		} elsif ( !defined( $opts{options}{unreach} ) ) {
-			$self->{options}{unreach} = 'port';
-		}
-
-		if ( defined( $opts{optsions}{unreach6} ) && ref( $opts{options}{unreach6} ) ne '' ) {
-			$self->{perror} = 1;
-			$self->{error}  = 22;
-			$self->{errorString}
-				= 'ref for $opts{options}{unreach6} is "' . ref( $opts{options}{unreach6} ) . '" and not ""';
-			$self->warn;
-		} elsif ( defined( $opts{optsions}{unreach6} )
-			&& $opts{optsions}{unreach6} ne 'no-route'
-			&& $opts{optsions}{unreach6} ne 'admin-prohib'
-			&& $opts{optsions}{unreach6} ne 'address'
-			&& $opts{optsions}{unreach6} ne 'port' )
-		{
-			$self->{perror} = 1;
-			$self->{error}  = 22;
-			$self->{errorString}
-				= '$opts{options}{unreach6} is "'
-				. $opts{options}{unreach6}
-				. '" and a value understood by ipfw(8) for unreach6';
-			$self->warn;
-		} elsif ( !defined( $opts{options}{unreach6} ) ) {
-			$self->{options}{unreach6} = 'port';
-		}
-
 	} ## end if ( defined( $opts{options} ) )
 
 	return $self;
@@ -439,12 +314,15 @@ sub init {
 	if ( defined( $self->{protocols}[0] ) ) {
 		push( @protocols, @{ $self->{protocols} } );
 	} else {
-		push( @protocols, 'ip' );
+		push( @protocols, 'tcp', 'udp', 'icmp', 'icmp6' );
 	}
 
+	my $pfctl='pfctl -a '.$self->{prefix}.'/'.$self->{name};
+
 	my @fail_okay_commands;
-	push( @fail_okay_commands, 'ipfw table ' . $self->{prefix} . '_' . $self->{name} . ' destroy' );
-	push( @fail_okay_commands, 'ipfw delete ' . $self->{options}{rule} );
+	push( @fail_okay_commands, $pfctl.' -t ' . $self->{prefix} . '_' . $self->{name} . ' -T flush' );
+	push( @fail_okay_commands, $pfctl.' -t ' . $self->{prefix} . '_' . $self->{name} . ' -T kill' );
+	push( @fail_okay_commands, $pfctl.' -F rules' );
 
 	if ( $self->{testing} ) {
 		$self->{frontend_obj}->{test_data}{fail_okay_commands} = \@fail_okay_commands;
@@ -460,13 +338,9 @@ sub init {
 
 	# generates the block rules
 	foreach my $item (@protocols) {
-		my $command = 'ipfw add ' . $self->{options}{rule} . ' ' . $self->{options}{type} . ' ';
-		if ( $self->{options}{type} ne 'deny' ) {
-			$command = $command . $self->{options}{ $self->{options}{type} } . ' ';
-		}
-		$command = $command . $item . ' from "table(' . $self->{prefix} . '_' . $self->{name} . ')" to me';
+		my $command = ''.' block drop quick proto ' . $item . ' from <' . $self->{prefix} . '_' . $self->{name} . '> to any';
 		if ( defined($ports) ) {
-			$command = $command . ' ' . $ports;
+			$command = $command . ' port ' . $ports;
 		}
 		push( @commands, $command );
 	} ## end foreach my $item (@protocols)
@@ -532,7 +406,7 @@ sub ban {
 		return;
 	}
 
-	my $command = 'ipfw table ' . $self->{prefix} . '_' . $self->{name} . ' add ' . $opts{ban};
+	my $command =  'pfctl -a '.$self->{prefix}.'/'.$self->{name} .' -T '.$self->{prefix}.'_'.$self->{name}.' add '. $opts{ban};
 
 	if ( $self->{testing} ) {
 		$self->{frontend_obj}->{test_data} = $command;
@@ -593,7 +467,7 @@ sub unban {
 		return;
 	}
 
-	my $command = 'ipfw table ' . $self->{prefix} . '_' . $self->{name} . ' delete ' . $opts{ban};
+	my $command =  'pfctl -a '.$self->{prefix}.'/'.$self->{name} .' -T '.$self->{prefix}.'_'.$self->{name}.' delete '. $opts{ban};
 
 	if ( $self->{testing} ) {
 		$self->{frontend_obj}->{test_data} = $command;
@@ -658,7 +532,7 @@ sub re_init {
 
 	my @re_init_test_data;
 	foreach my $item (@to_ban) {
-		my $command = 'ipfw table ' . $self->{prefix} . '_' . $self->{name} . ' add ' . $item;
+		my $command =  'pfctl -a '.$self->{prefix}.'/'.$self->{name} .' -T '.$self->{prefix}.'_'.$self->{name}.' add '. $item;
 
 		if ( $self->{testing} ) {
 			push( @re_init_test_data, $command );
@@ -796,24 +670,6 @@ Failed to teardown the backend.
 =head2 18, alreadyInited
 
 Backend has already been initiated.
-
-=head2 19, ruleInvalid
-
-The specified rule is not a int or 1 or less.
-
-=head2 20, typeInvalid
-
-The value for type is not valid.
-
-=head2 21, unreachInvalid
-
-The value for the uncreach option is invalid. Should be of a
-value unstood by unreach for ipfw(8).
-
-=head2 22, unreach6Invalid
-
-The value for the uncreach6 option is invalid. Should be of a
-value unstood by unreach6 for ipfw(8).
 
 =head2 23, initFailed
 
