@@ -22,7 +22,7 @@ eval {
 		protocols => [ 'tcp', 'udp' ],
 		prefix    => 'derp',
 		name      => 'ssh',
-		options   => { foo => 'bar' },
+		options   => { rule => '150' },
 		testing   => 1,
 	);
 
@@ -37,6 +37,14 @@ eval {
 	}
 
 	my $backend_obj = $fw_helper->{backend_obj};
+
+	if (!defined($backend_obj->{options})) {
+		die('$backend_obj->{options} is undef');
+	}elsif (ref($backend_obj->{options}) ne 'HASH') {
+		die('ref($backend_obj->{options}) ne "HASH", but "'.ref($backend_obj->{options}).'",');
+	}elsif (!defined($backend_obj->{options}{rule})) {
+		die('$backend_obj->{options}{rule} is undef');
+	}
 
 	if ( !defined( $backend_obj->{frontend_obj} ) ) {
 		die('$backend_obj->{frontend_obj} is undef');

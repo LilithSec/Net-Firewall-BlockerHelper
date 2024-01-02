@@ -103,12 +103,20 @@ sub new {
 				16 => 'reInitFailed',
 				17 => 'teardownFailed',
 				18 => 'alreadyInited',
+				19 => 'ruleInvalid',
+				20 => 'typeInvalid',
+				21 => 'unreachInvalid',
+				22 => 'unreach6Invalid',
 			},
 			fatal_flags      => {},
 			perror_not_fatal => 0,
 		},
-		backend      => undef,
-		options      => {},
+		options => {
+			rule     => 150,
+			type     => 'deny',
+			unreach  => 'port',
+			unreach6 => 'port',
+		},
 		ports        => [],
 		protocols    => [],
 		testing      => undef,
@@ -130,7 +138,7 @@ sub new {
 		my %ports;
 		foreach my $item ( @{ $opts{ports} } ) {
 			if ( $item =~ /^[0-9]+$/ && $item >= 1 ) {
-				$ports{$item}=1;
+				$ports{$item} = 1;
 			} elsif ( $item =~ /^[0-9]+$/ && $item < 1 ) {
 				$self->{perror} = 1;
 				$self->{error}  = 2;
@@ -147,12 +155,12 @@ sub new {
 						= $item . ' could not be resolved to a port name via getservbyname("' . $item . '", "tcp")';
 					$self->warn;
 				}
-				$ports{$port}=1;
+				$ports{$port} = 1;
 			} ## end else [ if ( $item =~ /^[0-9]+$/ && $item >= 1 ) ]
 		} ## end foreach my $item ( @{ $opts{ports} } )
-		my @port_keys=keys(%ports);
-		@port_keys=sort {$a <=> $b} @port_keys;
-		push(@{ $self->{ports}}, @port_keys);
+		my @port_keys = keys(%ports);
+		@port_keys = sort { $a <=> $b } @port_keys;
+		push( @{ $self->{ports} }, @port_keys );
 	} ## end elsif ( defined( $opts{ports} ) )
 
 	if ( defined( $opts{protocols} ) && ref( $opts{protocols} ) ne 'ARRAY' ) {
@@ -172,11 +180,11 @@ sub new {
 					= $item . ' could not be resolved to a port name via getservbyname("' . $item . '", "tcp")';
 				$self->warn;
 			}
-			$protocols{$item}=1;
+			$protocols{$item} = 1;
 		} ## end foreach my $item ( @{ $opts{protocols} } )
-		my @protocols_keys=keys(%protocols);
-		@protocols_keys=sort {$a cmp $b} @protocols_keys;
-		push(@{ $self->{protocols}}, @protocols_keys);
+		my @protocols_keys = keys(%protocols);
+		@protocols_keys = sort { $a cmp $b } @protocols_keys;
+		push( @{ $self->{protocols} }, @protocols_keys );
 	} ## end elsif ( defined( $opts{protocols} ) )
 
 	# make sure prefix is sane if defiend
@@ -220,7 +228,104 @@ sub new {
 			$self->warn;
 		}
 		$self->{options} = $opts{options};
-	}
+
+		if ( defined( $opts{options}{rule} ) && ref( $opts{options}{rule} ) ne '' ) {
+			$self->{perror}      = 1;
+			$self->{error}       = 19;
+			$self->{errorString} = 'ref for $opts{options}{rule} is "' . ref( $opts{options}{rule} ) . '" and not ""';
+			$self->warn;
+		} elsif ( defined( $opts{options}{rule} ) && $opts{options}{rule} !~ /^[0-9]+$/ ) {
+			$self->{perror}      = 1;
+			$self->{error}       = 19;
+			$self->{errorString} = '$opts{options}{rule} is "' . $opts{options}{rule} . '" and not "150"';
+			$self->warn;
+		} elsif ( defined( $opts{options}{rule} ) && $opts{options}{rule} < 1 ) {
+			$self->{perror}      = 1;
+			$self->{error}       = 19;
+			$self->{errorString} = '$opts{options}{rule} is "' . $opts{options}{rule} . '" is less than 1';
+			$self->warn;
+		} elsif ( !defined( $opts{options}{rule} ) ) {
+			$self->{options}{rule} = 150;
+		}
+
+		if ( defined( $opts{optsions}{type} ) && ref( $opts{options}{type} ) ne '' ) {
+			$self->{perror}      = 1;
+			$self->{error}       = 20;
+			$self->{errorString} = 'ref for $opts{options}{type} is "' . ref( $opts{options}{type} ) . '" and not ""';
+			$self->warn;
+		} elsif ( defined( $opts{optsions}{type} )
+			&& $opts{optsions}{type} ne 'unreach'
+			&& $opts{optsions}{type} ne 'deny'
+			&& $opts{optsions}{type} ne 'unreach6' )
+		{
+			$self->{perror} = 1;
+			$self->{error}  = 20;
+			$self->{errorString}
+				= '$opts{options}{type} is "' . $opts{options}{type} . '" and not "deny", "unreach", or "unreach6"';
+			$self->warn;
+		} elsif ( !defined( $opts{options}{type} ) ) {
+			$self->{options}{type} = 'deny';
+		}
+
+		if ( defined( $opts{optsions}{unreach} ) && ref( $opts{options}{unreach} ) ne '' ) {
+			$self->{perror} = 1;
+			$self->{error}  = 21;
+			$self->{errorString}
+				= 'ref for $opts{options}{unreach} is "' . ref( $opts{options}{unreach} ) . '" and not ""';
+			$self->warn;
+		} elsif ( defined( $opts{optsions}{unreach} )
+			&& $opts{optsions}{unreach} ne 'net'
+			&& $opts{optsions}{unreach} ne 'host'
+			&& $opts{optsions}{unreach} ne 'protocol'
+			&& $opts{optsions}{unreach} ne 'port'
+			&& $opts{optsions}{unreach} ne 'needfrag'
+			&& $opts{optsions}{unreach} ne 'srcfail'
+			&& $opts{optsions}{unreach} ne 'net-unknown'
+			&& $opts{optsions}{unreach} ne 'host-unknown'
+			&& $opts{optsions}{unreach} ne 'isolated'
+			&& $opts{optsions}{unreach} ne 'net-prohib'
+			&& $opts{optsions}{unreach} ne 'host-prohib'
+			&& $opts{optsions}{unreach} ne 'tosnet'
+			&& $opts{optsions}{unreach} ne 'toshost'
+			&& $opts{optsions}{unreach} ne 'filter-prohib'
+			&& $opts{optsions}{unreach} ne 'host-precedence'
+			&& $opts{optsions}{unreach} ne 'precedence-cutoff' )
+		{
+			$self->{perror} = 1;
+			$self->{error}  = 21;
+			$self->{errorString}
+				= '$opts{options}{unreach} is "'
+				. $opts{options}{unreach}
+				. '" and a value understood by ipfw(8) for unreach';
+			$self->warn;
+		} elsif ( !defined( $opts{options}{unreach} ) ) {
+			$self->{options}{unreach} = 'port';
+		}
+
+		if ( defined( $opts{optsions}{unreach6} ) && ref( $opts{options}{unreach6} ) ne '' ) {
+			$self->{perror} = 1;
+			$self->{error}  = 22;
+			$self->{errorString}
+				= 'ref for $opts{options}{unreach6} is "' . ref( $opts{options}{unreach6} ) . '" and not ""';
+			$self->warn;
+		} elsif ( defined( $opts{optsions}{unreach6} )
+			&& $opts{optsions}{unreach6} ne 'no-route'
+			&& $opts{optsions}{unreach6} ne 'admin-prohib'
+			&& $opts{optsions}{unreach6} ne 'address'
+			&& $opts{optsions}{unreach6} ne 'port' )
+		{
+			$self->{perror} = 1;
+			$self->{error}  = 22;
+			$self->{errorString}
+				= '$opts{options}{unreach6} is "'
+				. $opts{options}{unreach6}
+				. '" and a value understood by ipfw(8) for unreach6';
+			$self->warn;
+		} elsif ( !defined( $opts{options}{unreach6} ) ) {
+			$self->{options}{unreach6} = 'port';
+		}
+
+	} ## end if ( defined( $opts{options} ) )
 
 	return $self;
 } ## end sub new
@@ -244,12 +349,12 @@ sub init {
 		$self->warn;
 	}
 
-	if ($self->{testing}) {
-		$self->{frontend_obj}->{test_data}='inited';
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = 'inited';
 	}
 
 	$self->{inited} = 1;
-} ## end sub init_backend
+} ## end sub init
 
 =head2 ban
 
@@ -290,7 +395,7 @@ sub ban {
 		return;
 	}
 
-	$self->{frontend_obj}->{test_data}='banned '.$opts{ban};
+	$self->{frontend_obj}->{test_data} = 'banned ' . $opts{ban};
 
 	$self->{banned}{ $opts{ban} } = 1;
 } ## end sub ban
@@ -334,7 +439,7 @@ sub unban {
 		return;
 	}
 
-	$self->{frontend_obj}->{test_data}='unbanned '.$opts{ban};
+	$self->{frontend_obj}->{test_data} = 'unbanned ' . $opts{ban};
 
 	delete( $self->{banned}{ $opts{ban} } );
 } ## end sub unban
@@ -352,7 +457,7 @@ sub list {
 
 	$self->errorblank;
 
-	$self->{frontend_obj}->{test_data}='list';
+	$self->{frontend_obj}->{test_data} = 'list';
 
 	return keys( %{ $self->{banned} } );
 }
@@ -368,7 +473,7 @@ sub re_init {
 
 	$self->errorblank;
 
-	$self->{frontend_obj}->{test_data}='re_inited';
+	$self->{frontend_obj}->{test_data} = 're_inited';
 
 	$self->{inited} = 1;
 }
@@ -384,12 +489,12 @@ sub teardown {
 
 	$self->{inited} = 0,
 
-	$self->errorblank;
+		$self->errorblank;
 
-	$self->{frontend_obj}->{test_data}='toredown';
+	$self->{frontend_obj}->{test_data} = 'toredown';
 
 	$self->{inited} = 0;
-}
+} ## end sub teardown
 
 =head1 ERROR CODES / FLAGS
 
@@ -466,6 +571,24 @@ Failed to teardown the backend.
 =head2 18, alreadyInited
 
 Backend has already been initiated.
+
+=head2 19, ruleInvalid
+
+The specified rule is not a int or 1 or less.
+
+=head2 20, typeInvalid
+
+The value for type is not valid.
+
+=head2 21, unreachInvalid
+
+The value for the uncreach option is invalid. Should be of a
+value unstood by unreach for ipfw(8).
+
+=head2 22, unreach6Invalid
+
+The value for the uncreach6 option is invalid. Should be of a
+value unstood by unreach6 for ipfw(8).
 
 =head1 AUTHOR
 
