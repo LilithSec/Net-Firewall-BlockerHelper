@@ -388,7 +388,7 @@ sub init {
 		if ( $self->{options}{type} ne 'deny' ) {
 			$command = $command . $self->{options}{ $self->{options}{type} } . ' ';
 		}
-		$command = $command . $item.' from "table(' . $self->{prefix} . '_' . $self->{name} . ')" to me';
+		$command = $command . $item . ' from "table(' . $self->{prefix} . '_' . $self->{name} . ')" to me';
 		if ( defined($ports) ) {
 			$command = $command . ' ' . $ports;
 		}
@@ -400,13 +400,14 @@ sub init {
 	} else {
 		foreach my $item (@fail_okay_commands) {
 			my $output = `$item 2>&1`;
-			if ( $? ne 0 ) {
-				$self->{error}  = 22;
-				$self->{errorString}='init failed. non-zero exit code for the dommand... "'.$item.'"... output... '.$output;
+			if ( $? ne '0' ) {
+				$self->{error} = 22;
+				$self->{errorString}
+					= 'init failed. non-zero exit code for the dommand... "' . $item . '"... output... ' . $output;
 				$self->warn;
 			}
 		}
-	}
+	} ## end else [ if ( $self->{testing} ) ]
 
 	$self->{inited} = 1;
 } ## end sub init
@@ -450,7 +451,24 @@ sub ban {
 		return;
 	}
 
-	$self->{frontend_obj}->{test_data} = 'banned ' . $opts{ban};
+	if ( $self->{banned}{ $opts{ban} } ) {
+		$self->{frontend_obj}->{test_data} = 'already banned';
+		return;
+	}
+
+	my $command = 'ipfw table ' . $self->{prefix} . '_' . $self->{name} . ' add ' . $opts{ban};
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = $command;
+	} else {
+		my $output = `$command 2>&1`;
+		if ( $? ne '0' ) {
+			$self->{error} = 13;
+			$self->{errorString}
+				= 'ban failed. non-zero exit code for the command... "' . $command . '"... output... ' . $output;
+			$self->warn;
+		}
+	}
 
 	$self->{banned}{ $opts{ban} } = 1;
 } ## end sub ban
@@ -494,7 +512,24 @@ sub unban {
 		return;
 	}
 
-	$self->{frontend_obj}->{test_data} = 'unbanned ' . $opts{ban};
+	if ( !$self->{banned}{ $opts{ban} } ) {
+		$self->{frontend_obj}->{test_data} = 'not banned';
+		return;
+	}
+
+	my $command = 'ipfw table ' . $self->{prefix} . '_' . $self->{name} . ' delete ' . $opts{ban};
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = $command;
+	} else {
+		my $output = `$command 2>&1`;
+		if ( $? ne '0' ) {
+			$self->{error} = 14;
+			$self->{errorString}
+				= 'unban failed. non-zero exit code for the command... "' . $command . '"... output... ' . $output;
+			$self->warn;
+		}
+	}
 
 	delete( $self->{banned}{ $opts{ban} } );
 } ## end sub unban

@@ -92,15 +92,17 @@ eval {
 	$fw_helper->ban( ban => '1.2.3.4' );
 	if ( !defined( $fw_helper->{test_data} ) ) {
 		die('Backend did not set $fw_helper->{test_data}');
-	} elsif ( $fw_helper->{test_data} ne 'banned 1.2.3.4' ) {
-		die('($fw_helper->{test_data} ne "banned 1.2.3.4"');
+	} elsif ( $fw_helper->{test_data} ne 'ipfw table derp_ssh add 1.2.3.4' ) {
+		die( '($fw_helper->{test_data} ne "ipfw table derp_ssh add 1.2.3.4"... '
+				. Dumper( $fw_helper->{test_data} ) );
 	}
 
 	$fw_helper->ban( ban => '5.6.7.8' );
 	if ( !defined( $fw_helper->{test_data} ) ) {
 		die('Backend did not set $fw_helper->{test_data}');
-	} elsif ( $fw_helper->{test_data} ne 'banned 5.6.7.8' ) {
-		die('($fw_helper->{test_data} ne "banned 1.2.3.4"');
+	} elsif ( $fw_helper->{test_data} ne 'ipfw table derp_ssh add 5.6.7.8' ) {
+		die( '($fw_helper->{test_data} ne "ipfw table derp_ssh add 5.6.7.8"... '
+				. Dumper( $fw_helper->{test_data} ) );
 	}
 
 	my @banned = $fw_helper->list;
@@ -113,8 +115,16 @@ eval {
 	$fw_helper->unban( ban => '1.2.3.4' );
 	if ( !defined( $fw_helper->{test_data} ) ) {
 		die('Backend did not set $fw_helper->{test_data}');
-	} elsif ( $fw_helper->{test_data} ne 'unbanned 1.2.3.4' ) {
-		die('($fw_helper->{test_data} ne "unbanned 1.2.3.4"');
+	} elsif ( $fw_helper->{test_data} ne 'ipfw table derp_ssh delete 1.2.3.4' ) {
+		die( '($fw_helper->{test_data} ne "ipfw table derp_ssh delete 1.2.3.4"... '
+				. Dumper( $fw_helper->{test_data} ) );
+	}
+
+	$fw_helper->unban( ban => '1.2.3.4' );
+	if ( !defined( $fw_helper->{test_data} ) ) {
+		die('Backend did not set $fw_helper->{test_data}');
+	} elsif ( $fw_helper->{test_data} ne 'not banned' ) {
+		die( '($fw_helper->{test_data} ne "not banned"... ' . Dumper( $fw_helper->{test_data} ) );
 	}
 
 	@banned = $fw_helper->list;
