@@ -157,9 +157,7 @@ sub new {
 			perror_not_fatal => 0,
 		},
 		options => {
-			type     => 'deny',
-			unreach  => 'port',
-			unreach6 => 'port',
+			kill => 0,
 		},
 		ports        => [],
 		protocols    => [],
@@ -433,6 +431,24 @@ sub ban {
 			$self->warn;
 		}
 	}
+
+	if ( $self->{options}{kill} ) {
+		if ( defined( $self->{ports} ) ) {
+			foreach my $port ( @{ $self->{ports} } ) {
+				$command
+					= 'pfctl -s state -vv 2> /dev/null | grep -E \'<*->*|id:\'  | paste - - | grep -E ":'
+					. $port
+					. ' " | grep -E "[[ ]'
+					. $opts{ban}
+					. ']*:" | sed  "s/.*[\ \t]id:[\ \t]//" | cut -d " " -f 1 | paste -s - | xargs -n 1 pfctl -k id -k ';
+
+				my $output = `$command 2>&1`;
+			} ## end foreach my $port ( @{ $self->{ports} } )
+		} else {
+			$command = 'pfctl -k ' . $opts{ban};
+			my $output = `$command 2>&1`;
+		}
+	} ## end if ( $self->{options}{kill} )
 
 	$self->{banned}{ $opts{ban} } = 1;
 } ## end sub ban
