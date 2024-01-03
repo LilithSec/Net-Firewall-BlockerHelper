@@ -29,14 +29,14 @@ our $VERSION = '0.0.1';
         $backend1 = Net::Firewall::BlockerHelper::backends::pf->new(
                 backend => 'ipfw',
                 name => 'all',
-                options=>{ rule=>150 },
+                options=>{ kill=>1 },
             );
         $backend2 = Net::Firewall::BlockerHelper::backends::pf->new(
                 backend => 'ipfw',
                 ports => ['143'],
                 protocols => ['tcp'],
                 name => 'imap',
-                options=>{ rule=>151 },
+                options=>{ kill=>0 },
             );
     };
     if ($@) {
@@ -83,6 +83,10 @@ our $VERSION = '0.0.1';
 
 Initiates the the object.
 
+    - options :: Backend specific options that will be passed to the backend unchecked
+            outside of making sure it is a hash ref if defined. See below for furhter info.
+        - Default :: {}
+
     - ports :: A array of ports to block. Checked to make sure they are positive ints or a valid
             service name via getservbyname. All ports will be blocked if non are specified. If
             duplicates are removed.
@@ -98,6 +102,11 @@ Initiates the the object.
 
     - name :: Name of this specific instance. This must be specified.
         - default :: undef
+
+The options hash accepts the following.
+
+    - kill :: If it should kill connections to the banned IP or not.
+        - Default :: 0
 
 All errors are considered fatal, meaning if new fails it will die.
 
