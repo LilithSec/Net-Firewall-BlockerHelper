@@ -272,7 +272,7 @@ sub new {
 			$self->warn;
 		}
 		$self->{options} = $opts{options};
-	} ## end if ( defined( $opts{options} ) )
+	}
 
 	return $self;
 } ## end sub new
@@ -317,12 +317,14 @@ sub init {
 		push( @protocols, 'tcp', 'udp', 'icmp', 'icmp6' );
 	}
 
-	my $pfctl='pfctl -a '.$self->{prefix}.'/'.$self->{name};
+	my $pfctl = 'pfctl -a ' . $self->{prefix} . '/' . $self->{name};
+
+	my $table = $self->{prefix} . '_' . $self->{name};
 
 	my @fail_okay_commands;
-	push( @fail_okay_commands, $pfctl.' -t ' . $self->{prefix} . '_' . $self->{name} . ' -T flush' );
-	push( @fail_okay_commands, $pfctl.' -t ' . $self->{prefix} . '_' . $self->{name} . ' -T kill' );
-	push( @fail_okay_commands, $pfctl.' -F rules' );
+	push( @fail_okay_commands, $pfctl . ' -t ' . $table . ' -T flush' );
+	push( @fail_okay_commands, $pfctl . ' -t ' . $table . ' -T kill' );
+	push( @fail_okay_commands, $pfctl . ' -F rules' );
 
 	if ( $self->{testing} ) {
 		$self->{frontend_obj}->{test_data}{fail_okay_commands} = \@fail_okay_commands;
@@ -332,18 +334,24 @@ sub init {
 		}
 	}
 
+	my $rules_init = '';
+	foreach my $item (@protocols) {
+		my $new_line = 'block drop quick proto ' . $item . ' from <' . $table . '> to any';
+		my $to_add   = '';
+		if ( defined( $self->{ports}[0] ) ) {
+			foreach my $port ( @{ $self->{ports} } ) {
+				$to_add = $to_add . $new_line . ' port ' . $port . "\n";
+			}
+		} else {
+			$to_add = $new_line . "\n";
+		}
+		$rules_init = $rules_init . $to_add;
+	} ## end foreach my $item (@protocols)
+
 	my @commands;
 	# add the table to create the command
-	push( @commands, 'ipfw table ' . $self->{prefix} . '_' . $self->{name} . ' create' );
-
-	# generates the block rules
-	foreach my $item (@protocols) {
-		my $command = ''.' block drop quick proto ' . $item . ' from <' . $self->{prefix} . '_' . $self->{name} . '> to any';
-		if ( defined($ports) ) {
-			$command = $command . ' port ' . $ports;
-		}
-		push( @commands, $command );
-	} ## end foreach my $item (@protocols)
+	push( @commands, "echo 'table <" . $table . "> persist counters' | " . $pfctl . ' -f-' );
+	push( @commands, "echo '" . $rules_init . "' | " . $pfctl . ' -f-' );
 
 	if ( $self->{testing} ) {
 		$self->{frontend_obj}->{test_data}{commands} = \@commands;
@@ -406,7 +414,13 @@ sub ban {
 		return;
 	}
 
-	my $command =  'pfctl -a '.$self->{prefix}.'/'.$self->{name} .' -T '.$self->{prefix}.'_'.$self->{name}.' add '. $opts{ban};
+	my $command
+		= 'pfctl -a '
+		. $self->{prefix} . '/'
+		. $self->{name} . ' -T '
+		. $self->{prefix} . '_'
+		. $self->{name} . ' add '
+		. $opts{ban};
 
 	if ( $self->{testing} ) {
 		$self->{frontend_obj}->{test_data} = $command;
@@ -467,7 +481,14 @@ sub unban {
 		return;
 	}
 
-	my $command =  'pfctl -a '.$self->{prefix}.'/'.$self->{name} .' -T '.$self->{prefix}.'_'.$self->{name}.' delete '. $opts{ban};
+	my $command
+		= 'pfctl -a '
+		. $self->{prefix} . '/'
+		. $self->{name} . ' -T '
+		. $self->{prefix} . '_'
+		. $self->{name}
+		. ' delete '
+		. $opts{ban};
 
 	if ( $self->{testing} ) {
 		$self->{frontend_obj}->{test_data} = $command;
@@ -532,7 +553,13 @@ sub re_init {
 
 	my @re_init_test_data;
 	foreach my $item (@to_ban) {
-		my $command =  'pfctl -a '.$self->{prefix}.'/'.$self->{name} .' -T '.$self->{prefix}.'_'.$self->{name}.' add '. $item;
+		my $command
+			= 'pfctl -a '
+			. $self->{prefix} . '/'
+			. $self->{name} . ' -T '
+			. $self->{prefix} . '_'
+			. $self->{name} . ' add '
+			. $item;
 
 		if ( $self->{testing} ) {
 			push( @re_init_test_data, $command );
@@ -576,9 +603,14 @@ sub teardown {
 
 	$self->{frontend_obj}->{test_data} = {};
 
+	my $pfctl = 'pfctl -a ' . $self->{prefix} . '/' . $self->{name};
+
+	my $table = $self->{prefix} . '_' . $self->{name};
+
 	my @commands;
-	push( @commands, 'ipfw table ' . $self->{prefix} . '_' . $self->{name} . ' destroy' );
-	push( @commands, 'ipfw delete ' . $self->{options}{rule} );
+	push( @commands, $pfctl . ' -t ' . $table . ' -T flush' );
+	push( @commands, $pfctl . ' -t ' . $table . ' -T kill' );
+	push( @commands, $pfctl . ' -F rules' );
 
 	if ( $self->{testing} ) {
 		$self->{frontend_obj}->{test_data} = \@commands;

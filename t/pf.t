@@ -68,40 +68,44 @@ eval {
 		die( '$fw_helper->{test_data}{fail_okay_commands} is undef... ' . Dumper( $fw_helper->{test_data} ) );
 	} elsif ( !defined( $fw_helper->{test_data}{commands} ) ) {
 		die( '$fw_helper->{test_data}{commands} is undef... ' . Dumper( $fw_helper->{test_data} ) );
-	} elsif ( !defined( $fw_helper->{test_data}{commands}[2] ) ) {
-		die( '$fw_helper->{test_data}{commands}[2] is undef... ' . Dumper( $fw_helper->{test_data} ) );
-	} elsif ( !defined( $fw_helper->{test_data}{fail_okay_commands}[1] ) ) {
-		die( '$fw_helper->{test_data}{fail_okay_commands}[1] is undef... ' . Dumper( $fw_helper->{test_data} ) );
-	} elsif ( $fw_helper->{test_data}{fail_okay_commands}[0] ne 'ipfw table derp_ssh destroy' ) {
-		die( '$fw_helper->{test_data}{fail_okay_commands}[0] ne "ipfw table derp_ssh destroy"... '
+	} elsif ( !defined( $fw_helper->{test_data}{commands}[1] ) ) {
+		die( '$fw_helper->{test_data}{commands}[1] is undef... ' . Dumper( $fw_helper->{test_data} ) );
+	} elsif ( !defined( $fw_helper->{test_data}{fail_okay_commands}[2] ) ) {
+		die( '$fw_helper->{test_data}{fail_okay_commands}[2] is undef... ' . Dumper( $fw_helper->{test_data} ) );
+	} elsif ( $fw_helper->{test_data}{fail_okay_commands}[0] ne 'pfctl -a derp/ssh -t derp_ssh -T flush' ) {
+		die( '$fw_helper->{test_data}{fail_okay_commands}[0] ne "pfctl -a derp/ssh -t derp_ssh -T flush"... '
 				. Dumper( $fw_helper->{test_data} ) );
-	} elsif ( $fw_helper->{test_data}{fail_okay_commands}[1] ne 'ipfw delete 150' ) {
-		die( '$fw_helper->{test_data}{fail_okay_commands}[1] ne "ipfw delete 150"... '
+	} elsif ( $fw_helper->{test_data}{fail_okay_commands}[1] ne 'pfctl -a derp/ssh -t derp_ssh -T kill' ) {
+		die( '$fw_helper->{test_data}{fail_okay_commands}[1] ne "pfctl -a derp/ssh -t derp_ssh -T kill"... '
+			 . Dumper( $fw_helper->{test_data} ) );
+	} elsif ( $fw_helper->{test_data}{fail_okay_commands}[2] ne 'pfctl -a derp/ssh -F rules' ) {
+		die( '$fw_helper->{test_data}{fail_okay_commands}[2] ne "pfctl -a derp/ssh -F rules"... '
 				. Dumper( $fw_helper->{test_data} ) );
-	} elsif ( $fw_helper->{test_data}{commands}[0] ne 'ipfw table derp_ssh create' ) {
-		die( '$fw_helper->{test_data}{commands}[0] ne "ipfw table derp_ssh create"... '
+	} elsif ( $fw_helper->{test_data}{commands}[0] ne "echo 'table <derp_ssh> persist counters' | pfctl -a derp/ssh -f-" ) {
+		die( '$fw_helper->{test_data}{commands}[0] ne "echo \'table <derp_ssh> persist counters\' | pfctl -a derp/ssh -f-"... '
 				. Dumper( $fw_helper->{test_data} ) );
-	} elsif ( $fw_helper->{test_data}{commands}[1] ne 'ipfw add 150 deny tcp from "table(derp_ssh)" to me 22' ) {
-		die( '$fw_helper->{test_data}{commands}[1] ne "ipfw add 150 deny tcp from \"table(derp_ssh)\" to me 22"... '
-				. Dumper( $fw_helper->{test_data} ) );
-	} elsif ( $fw_helper->{test_data}{commands}[2] ne 'ipfw add 150 deny udp from "table(derp_ssh)" to me 22' ) {
-		die( '$fw_helper->{test_data}{commands}[2] ne "ipfw add 150 deny udp from \"table(derp_ssh)\" to me 22"... '
+	} elsif ( $fw_helper->{test_data}{commands}[1] ne "echo 'block drop quick proto tcp from <derp_ssh> to any port 22
+block drop quick proto udp from <derp_ssh> to any port 22
+' | pfctl -a derp/ssh -f-" ) {
+		die( '$fw_helper->{test_data}{commands}[1] ne "echo \'block drop quick proto tcp from <derp_ssh> to any port 22
+block drop quick proto udp from <derp_ssh> to any port 22
+\' | pfctl -a derp/ssh -f-"... '
 				. Dumper( $fw_helper->{test_data} ) );
 	}
 
 	$fw_helper->ban( ban => '1.2.3.4' );
 	if ( !defined( $fw_helper->{test_data} ) ) {
 		die('Backend did not set $fw_helper->{test_data}');
-	} elsif ( $fw_helper->{test_data} ne 'ipfw table derp_ssh add 1.2.3.4' ) {
-		die( '($fw_helper->{test_data} ne "ipfw table derp_ssh add 1.2.3.4"... '
+	} elsif ( $fw_helper->{test_data} ne 'pfctl -a derp/ssh -T derp_ssh add 1.2.3.4' ) {
+		die( '($fw_helper->{test_data} ne "pfctl -a derp/ssh -T derp_ssh add 1.2.3.4"... '
 				. Dumper( $fw_helper->{test_data} ) );
 	}
 
 	$fw_helper->ban( ban => '5.6.7.8' );
 	if ( !defined( $fw_helper->{test_data} ) ) {
 		die('Backend did not set $fw_helper->{test_data}');
-	} elsif ( $fw_helper->{test_data} ne 'ipfw table derp_ssh add 5.6.7.8' ) {
-		die( '($fw_helper->{test_data} ne "ipfw table derp_ssh add 5.6.7.8"... '
+	} elsif ( $fw_helper->{test_data} ne 'pfctl -a derp/ssh -T derp_ssh add 5.6.7.8' ) {
+		die( '($fw_helper->{test_data} ne "pfctl -a derp/ssh -T derp_ssh add 5.6.7.8"... '
 				. Dumper( $fw_helper->{test_data} ) );
 	}
 
@@ -115,8 +119,8 @@ eval {
 	$fw_helper->unban( ban => '1.2.3.4' );
 	if ( !defined( $fw_helper->{test_data} ) ) {
 		die('Backend did not set $fw_helper->{test_data}');
-	} elsif ( $fw_helper->{test_data} ne 'ipfw table derp_ssh delete 1.2.3.4' ) {
-		die( '($fw_helper->{test_data} ne "ipfw table derp_ssh delete 1.2.3.4"... '
+	} elsif ( $fw_helper->{test_data} ne 'pfctl -a derp/ssh -T derp_ssh delete 1.2.3.4' ) {
+		die( '($fw_helper->{test_data} ne "pfctl -a derp/ssh -T derp_ssh delete 1.2.3.4"... '
 				. Dumper( $fw_helper->{test_data} ) );
 	}
 
@@ -137,19 +141,21 @@ eval {
 	$fw_helper->re_init;
 	if ( !defined( $fw_helper->{test_data} ) ) {
 		die('Backend did not set $fw_helper->{test_data}');
-	} elsif ( $fw_helper->{test_data}[0] ne 'ipfw table derp_ssh add 5.6.7.8' ) {
-		die( '($fw_helper->{test_data}[0] ne "ipfw table derp_ssh add 5.6.7.8"... '
+	} elsif ( $fw_helper->{test_data}[0] ne 'pfctl -a derp/ssh -T derp_ssh add 5.6.7.8' ) {
+		die( '($fw_helper->{test_data}[0] ne "pfctl -a derp/ssh -T derp_ssh add 5.6.7.8"... '
 				. Dumper( $fw_helper->{test_data} ) );
 	}
 
 	$fw_helper->teardown;
 	if ( !defined( $fw_helper->{test_data} ) ) {
 		die('Backend did not set $fw_helper->{test_data}');
-	} elsif ( $fw_helper->{test_data}[0] ne 'ipfw table derp_ssh destroy' ) {
-		die( '($fw_helper->{test_data}[0] ne "ipfw table derp_ssh destroy"... '
+	} elsif ( $fw_helper->{test_data}[0] ne 'pfctl -a derp/ssh -t derp_ssh -T flush' ) {
+		die( '($fw_helper->{test_data}[0] ne "pfctl -a derp/ssh -t derp_ssh -T flush"... '
 				. Dumper( $fw_helper->{test_data} ) );
-	} elsif ( $fw_helper->{test_data}[1] ne 'ipfw delete 150' ) {
-		die( '($fw_helper->{test_data}[1] ne "ipfw delete 150"... ' . Dumper( $fw_helper->{test_data} ) );
+	} elsif ( $fw_helper->{test_data}[1] ne 'pfctl -a derp/ssh -t derp_ssh -T kill' ) {
+		die( '($fw_helper->{test_data}[1] ne "pfctl -a derp/ssh -t derp_ssh -T kill"... ' . Dumper( $fw_helper->{test_data} ) );
+	} elsif ( $fw_helper->{test_data}[2] ne 'pfctl -a derp/ssh -F rules' ) {
+		die( '($fw_helper->{test_data}[2] ne "pfctl -a derp/ssh -F rules"... ' . Dumper( $fw_helper->{test_data} ) );
 	} elsif ( $backend_obj->{inited} ) {
 		die('($backend_obj->{inited} true when it should not be');
 	}
