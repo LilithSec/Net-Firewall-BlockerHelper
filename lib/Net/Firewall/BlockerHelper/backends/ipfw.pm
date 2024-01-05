@@ -560,7 +560,7 @@ sub ban {
 			. $opts{ban}
 			. ' | xargs -n 4 tcpdrop';
 		if ( $self->{testing} ) {
-			$self->{frontend_obj}->{test_data} = [$command];
+			push( @{ $self->{frontend_obj}->{test_data} }, $command );
 		} else {
 			my $output = `$command 2>&1`;
 		}
@@ -570,7 +570,7 @@ sub ban {
 			. $opts{ban}
 			. ' | perl -lpe \'$_=~s/.*udp[46]  *//; $_=~s/:([0-9]+) / $1 /; $_=~s/:([0-9]+)$/ $1/; $_=~s/\%[a-zA-Z0-9]+/ /g ; print $_\'';
 		if ( $self->{testing} ) {
-			$self->{frontend_obj}->{test_data} = [$command];
+			push( @{ $self->{frontend_obj}->{test_data} }, $command );
 		} else {
 			my $output = `$command 2>&1`;
 		}

@@ -22,7 +22,7 @@ eval {
 		protocols => [ 'tcp', 'udp' ],
 		prefix    => 'derp',
 		name      => 'ssh',
-		options   => { rule => '150' },
+		options   => { rule => '150', kill => 1 },
 		testing   => 1,
 	);
 
@@ -94,6 +94,19 @@ eval {
 		die('Backend did not set $fw_helper->{test_data}');
 	} elsif ( $fw_helper->{test_data}[0] ne 'ipfw table derp_ssh add 1.2.3.4' ) {
 		die( '($fw_helper->{test_data}[0] ne "ipfw table derp_ssh add 1.2.3.4"... '
+				. Dumper( $fw_helper->{test_data} ) );
+	} elsif ( $fw_helper->{test_data}[1] ne
+		'sockstat -nc4 -P tcp |sed "s/.*tcp[46]  *//" | sed "s/:/ /g" | grep -i 1.2.3.4 | xargs -n 4 tcpdrop' )
+	{
+		die(
+			'($fw_helper->{test_data}[1] ne \'sockstat -nc4 -P tcp |sed "s/.*tcp[46]  *//" | sed "s/:/ /g" | grep -i 1.2.3.4 | xargs -n 4 tcpdrop\'... '
+				. Dumper( $fw_helper->{test_data} ) );
+	} elsif ( $fw_helper->{test_data}[2] ne
+		'sockstat -n6 -P udp | grep -i 1.2.3.4 | perl -lpe \'$_=~s/.*udp[46]  *//; $_=~s/:([0-9]+) / $1 /; $_=~s/:([0-9]+)$/ $1/; $_=~s/\\%[a-zA-Z0-9]+/ /g ; print $_\''
+		)
+	{
+		die(
+			'($fw_helper->{test_data}[2] ne \'sockstat -n6 -P udp | grep -i 1.2.3.4 | perl -lpe \'$_=~s/.*udp[46]  *//; $_=~s/:([0-9]+) / $1 /; $_=~s/:([0-9]+)$/ $1/; $_=~s/\\%[a-zA-Z0-9]+/ /g ; print $_\'\'... '
 				. Dumper( $fw_helper->{test_data} ) );
 	}
 
