@@ -92,16 +92,16 @@ eval {
 	$fw_helper->ban( ban => '1.2.3.4' );
 	if ( !defined( $fw_helper->{test_data} ) ) {
 		die('Backend did not set $fw_helper->{test_data}');
-	} elsif ( $fw_helper->{test_data} ne 'ipfw table derp_ssh add 1.2.3.4' ) {
-		die( '($fw_helper->{test_data} ne "ipfw table derp_ssh add 1.2.3.4"... '
+	} elsif ( $fw_helper->{test_data}[0] ne 'ipfw table derp_ssh add 1.2.3.4' ) {
+		die( '($fw_helper->{test_data}[0] ne "ipfw table derp_ssh add 1.2.3.4"... '
 				. Dumper( $fw_helper->{test_data} ) );
 	}
 
 	$fw_helper->ban( ban => '5.6.7.8' );
 	if ( !defined( $fw_helper->{test_data} ) ) {
 		die('Backend did not set $fw_helper->{test_data}');
-	} elsif ( $fw_helper->{test_data} ne 'ipfw table derp_ssh add 5.6.7.8' ) {
-		die( '($fw_helper->{test_data} ne "ipfw table derp_ssh add 5.6.7.8"... '
+	} elsif ( $fw_helper->{test_data}[0] ne 'ipfw table derp_ssh add 5.6.7.8' ) {
+		die( '($fw_helper->{test_data}[0] ne "ipfw table derp_ssh add 5.6.7.8"... '
 				. Dumper( $fw_helper->{test_data} ) );
 	}
 

@@ -29,7 +29,7 @@ our $VERSION = '0.0.1';
         $backend1 = Net::Firewall::BlockerHelper::backends::ipfw->new(
                 backend => 'ipfw',
                 name => 'all',
-                options=>{ rule=>150 },
+                options=>{ rule=>150, kill=>1 },
             );
         $backend2 = Net::Firewall::BlockerHelper::backends::ipfw->new(
                 backend => 'ipfw',
@@ -122,6 +122,9 @@ The options hash accepts the following.
             See ipfw(8) for more info.
         - Default :: port
 
+    - kill :: Use tcpdrop to kill TCP connections for that IP.
+        - Default :: 0
+
 All errors are considered fatal, meaning if new fails it will die.
 
     my $backend;
@@ -188,6 +191,7 @@ sub new {
 			type     => 'deny',
 			unreach  => 'port',
 			unreach6 => 'port',
+			kill     => 0,
 		},
 		ports        => [],
 		protocols    => [],
@@ -300,6 +304,10 @@ sub new {
 			$self->warn;
 		}
 		$self->{options} = $opts{options};
+
+		if ( !defined( $opts{options}{kill} ) ) {
+			$self->{options}{kill} = 0;
+		}
 
 		if ( defined( $opts{options}{rule} ) && ref( $opts{options}{rule} ) ne '' ) {
 			$self->{perror}      = 1;
@@ -535,7 +543,7 @@ sub ban {
 	my $command = 'ipfw table ' . $self->{prefix} . '_' . $self->{name} . ' add ' . $opts{ban};
 
 	if ( $self->{testing} ) {
-		$self->{frontend_obj}->{test_data} = $command;
+		$self->{frontend_obj}->{test_data} = [$command];
 	} else {
 		my $output = `$command 2>&1`;
 		if ( $? ne '0' ) {
@@ -545,6 +553,28 @@ sub ban {
 			$self->warn;
 		}
 	}
+
+	if ( $self->{options}{kill} ) {
+		$command
+			= 'sockstat -nc4 -P tcp |sed "s/.*tcp[46]  *//" | sed "s/:/ /g" | grep -i '
+			. $opts{ban}
+			. ' | xargs -n 4 tcpdrop';
+		if ( $self->{testing} ) {
+			$self->{frontend_obj}->{test_data} = [$command];
+		} else {
+			my $output = `$command 2>&1`;
+		}
+
+		$command
+			= 'sockstat -n6 -P udp | grep -i '
+			. $opts{ban}
+			. ' | perl -lpe \'$_=~s/.*udp[46]  *//; $_=~s/:([0-9]+) / $1 /; $_=~s/:([0-9]+)$/ $1/; $_=~s/\%[a-zA-Z0-9]+/ /g ; print $_\'';
+		if ( $self->{testing} ) {
+			$self->{frontend_obj}->{test_data} = [$command];
+		} else {
+			my $output = `$command 2>&1`;
+		}
+	} ## end if ( $self->{options}{kill} )
 
 	$self->{banned}{ $opts{ban} } = 1;
 } ## end sub ban
