@@ -13,10 +13,11 @@ t/01-load__Net__Firewall__Blocker__backends__dummy.t
 t/02-load__Net__Firewall__Blocker__backends__ipfw.t
 t/03-load__Net__Firewall__Blocker__backends__pf.t
 t/04-load__Net__Firewall__Blocker__backends__shell.t
-t/manifest.t
-t/pod-coverage.t
-t/pod.t
-t/new.t
 t/dummy.t
 t/ipfw.t
+t/manifest.t
+t/new.t
 t/pf.t
+t/pod-coverage.t
+t/pod.t
+t/shell.t
