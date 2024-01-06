@@ -27,6 +27,7 @@ our $VERSION = '0.0.1';
     eval {
         $fw_helper = Net::Firewall::BlockerHelper->new(
                 backend=>'shell',
+                name=>'derp',
                 options=>{
                           init=>'mkdir /tmp/fw_helper_example/',
                           teardown=>'rm -rf /tmp/fw_helper_example/',
@@ -63,6 +64,9 @@ the options hash.
     - options :: A hash of options to pass to the backend.
         Default :: {}
 
+    - name :: Not used but is required by Net::Firewall::BlockerHelper.
+        Default :: undef
+
 The values used for options is as below. All must be defined and can't be ''.
 '2>&1' is appended to the end of the commands.
 
@@ -84,6 +88,7 @@ All errors are considered fatal, meaning if new fails it will die.
     eval {
         $fw_helper = Net::Firewall::BlockerHelper->new(
                 backend=>'shell',
+                name=>'derp',
                 options=>{
                           init=>'mkdir /tmp/fw_helper_example/',
                           teardown=>'rm -rf /tmp/fw_helper_example/',
@@ -166,42 +171,42 @@ sub new {
 		}
 		$self->{options} = $opts{options};
 
-		if ( !defined( $opts{init} ) ) {
+		if ( !defined( $opts{options}{init} ) ) {
 			$self->{perror}      = 1;
 			$self->{error}       = 2;
 			$self->{errorString} = 'init is not defined';
 			$self->warn;
-		} elsif ( $opts{init} eq '' ) {
+		} elsif ( $opts{options}{init} eq '' ) {
 			$self->{perror}      = 1;
 			$self->{error}       = 3;
 			$self->{errorString} = 'init is not blank';
 			$self->warn;
-		} elsif ( !defined( $opts{teardown} ) ) {
+		} elsif ( !defined( $opts{options}{teardown} ) ) {
 			$self->{perror}      = 1;
 			$self->{error}       = 4;
 			$self->{errorString} = 'teardown is not defined';
 			$self->warn;
-		} elsif ( $opts{teardown} eq '' ) {
+		} elsif ( $opts{options}{teardown} eq '' ) {
 			$self->{perror}      = 1;
 			$self->{error}       = 4;
 			$self->{errorString} = 'teardown is not blank';
 			$self->warn;
-		} elsif ( !defined( $opts{ban} ) ) {
+		} elsif ( !defined( $opts{options}{ban} ) ) {
 			$self->{perror}      = 1;
 			$self->{error}       = 5;
 			$self->{errorString} = 'ban is not defined';
 			$self->warn;
-		} elsif ( $opts{ban} eq '' ) {
+		} elsif ( $opts{options}{ban} eq '' ) {
 			$self->{perror}      = 1;
 			$self->{error}       = 5;
 			$self->{errorString} = 'ban is not blank';
 			$self->warn;
-		} elsif ( !defined( $opts{unban} ) ) {
+		} elsif ( !defined( $opts{options}{unban} ) ) {
 			$self->{perror}      = 1;
 			$self->{error}       = 6;
 			$self->{errorString} = 'unban is not defined';
 			$self->warn;
-		} elsif ( $opts{unban} eq '' ) {
+		} elsif ( $opts{options}{unban} eq '' ) {
 			$self->{perror}      = 1;
 			$self->{error}       = 5;
 			$self->{errorString} = 'unban is not blank';
@@ -400,9 +405,9 @@ sub re_init {
 
 	my @to_re_ban = keys( %{ $self->{banned} } );
 
-	foreach my $items (@to_re_ban) {
+	foreach my $item (@to_re_ban) {
 		my $command = $self->{options}{ban};
-		$command =~ s/\%\%\%BAN\%\%\%/$opts{ban}/g;
+		$command =~ s/\%\%\%BAN\%\%\%/$item/g;
 
 		if ( !$self->{testing} ) {
 			my $output = `$command 2>&1`;
