@@ -9,7 +9,7 @@ use Regexp::IPv6 qw($IPv6_re);
 
 =head1 NAME
 
-Net::Firewall::BlockerHelper::backends::dummy - Example dummy backend for testing purposes.
+Net::Firewall::BlockerHelper::backends::shell - A shell backend for Net::Firewall::BlockHelper.
 
 =head1 VERSION
 
@@ -23,43 +23,73 @@ our $VERSION = '0.0.1';
 
     use Net::Firewall::BlockerHelper;
 
-    my $fw_helper = Net::Firewall::BlockerHelper::backends::dummy->new();
-    ...
+    my $fw_helper;
+    eval {
+        $fw_helper = Net::Firewall::BlockerHelper->new(
+                backend=>'shell',
+                options=>{
+                          init=>'mkdir /tmp/fw_helper_example/',
+                          teardown=>'rm -rf /tmp/fw_helper_example/',
+                          unban=>'rm -rf /tmp/fw_helper_example/%%%BAN%%%',
+                          ban=>'touch /tmp/fw_helper_example/%%%BAN%%%',
+                          },
+            );
+    };
+    if ($@) {
+        print 'Error: '
+            . $Error::Helper::error
+            . "\nError String: "
+            . $Error::Helper::errorString
+            . "\nError Flag: "
+            . $Error::Helper::errorFlag . "\n";
+    }
 
+    $fw_helper->init;
+
+    $fw_helper->ban(ban => '5.6.7.8');
+    $fw_helper->ban(ban => '1.2.3.4');
+
+    $fw_helper->unban(ban => '5.6.7.8');
+
+    $fw_helper->teardown;
 
 =head1 METHODS
 
 =head2 new
 
-Initiates the the object.
+Initiates the the object. Unlike other backends, this only takes uses
+the options hash.
 
-    - options :: Backend specific options that will be passed to the backend unchecked
-            outside of making sure it is a hash ref if defined.
-        - Default :: {}
+    - options :: A hash of options to pass to the backend.
+        Default :: {}
 
-    - ports :: A array of ports to block. Checked to make sure they are positive ints or a valid
-            service name via getservbyname.
-        - Default :: []
+The values used for options is as below. All must be defined and can't be ''.
+'2>&1' is appended to the end of the commands.
 
-    - protocols :: A array of protocols to block. By default will block all. This
-            is checked against /etc/protocols via the function getprotobyname.
-        - Default :: []
+    - init :: The command to run to init the blocking.
+         Default :: undef
 
-    - prefix :: Prefix to use. Must match the regex /^[a-zA-Z0-9]+$/
-        - default :: kur
+    - teardown :: The command to run to teardown the blocking.
+         Default :: undef
 
-    - name :: Name of this specific instance.
-        - default :: undef
+    - ban :: The command to run to ban a IP. %%%BAN%%% is replaced with the IP.
+         Default :: undef
+
+    - unban :: The command to run to un ban a IP. %%%BAN%%% is replaced with the IP.
+         Default :: undef
 
 All errors are considered fatal, meaning if new fails it will die.
 
     my $fw_helper;
     eval {
         $fw_helper = Net::Firewall::BlockerHelper->new(
-                backend => 'ipfw',
-                ports => ['22'],
-                protocols => ['tcp'],
-                name => 'ssh',
+                backend=>'shell',
+                options=>{
+                          init=>'mkdir /tmp/fw_helper_example/',
+                          teardown=>'rm -rf /tmp/fw_helper_example/',
+                          unban=>'rm -rf /tmp/fw_helper_example/%%%BAN%%%',
+                          ban=>'touch /tmp/fw_helper_example/%%%BAN%%%',
+                          },
             );
     };
     if ($@) {
@@ -86,16 +116,14 @@ sub new {
 			all_errors_fatal => 1,
 			flags            => {
 				1  => 'notInited',
-				2  => 'invalidPortSpecified',
-				3  => 'portsNotArray',
-				4  => 'protocolsNotArray',
-				5  => 'invalidPortSpecified',
-				6  => 'invalidPrefixSpecified',
-				7  => 'invalidName',
+				2  => 'initInvalid',
+				3  => 'optionsUndef',
+				4  => 'teardownInvalid',
+				5  => 'banInvalid',
+				6  => 'unbanInvalid',
 				8  => 'optionsNotHash',
 				9  => 'noBanItem',
 				10 => 'banItemNotIP',
-				11 => 'invalidBackend',
 				12 => 'backendInitError',
 				13 => 'banFailed',
 				14 => 'unbanFailed',
@@ -121,89 +149,6 @@ sub new {
 	};
 	bless $self;
 
-	if ( defined( $opts{ports} ) && ref( $opts{ports} ) ne 'ARRAY' ) {
-		$self->{perror}      = 1;
-		$self->{error}       = 3;
-		$self->{errorString} = 'ports is defined and type is not array but "' . ref( $opts{ports} ) . '"';
-		$self->warn;
-	} elsif ( defined( $opts{ports} ) ) {
-		my %ports;
-		foreach my $item ( @{ $opts{ports} } ) {
-			if ( $item =~ /^[0-9]+$/ && $item >= 1 ) {
-				$ports{$item}=1;
-			} elsif ( $item =~ /^[0-9]+$/ && $item < 1 ) {
-				$self->{perror} = 1;
-				$self->{error}  = 2;
-				$self->{errorString}
-					= $item . ' is not a valid value for a port as it must be a int greater or equal to 1';
-				$self->warn;
-			} else {
-				# just using tcp here as protocol must be specified
-				my ( $name, $aliases, $port, $proto ) = getservbyname( $item, 'tcp' );
-				if ( !defined($port) ) {
-					$self->{perror} = 1;
-					$self->{error}  = 2;
-					$self->{errorString}
-						= $item . ' could not be resolved to a port name via getservbyname("' . $item . '", "tcp")';
-					$self->warn;
-				}
-				$ports{$port}=1;
-			} ## end else [ if ( $item =~ /^[0-9]+$/ && $item >= 1 ) ]
-		} ## end foreach my $item ( @{ $opts{ports} } )
-		my @port_keys=keys(%ports);
-		@port_keys=sort {$a <=> $b} @port_keys;
-		push(@{ $self->{ports}}, @port_keys);
-	} ## end elsif ( defined( $opts{ports} ) )
-
-	if ( defined( $opts{protocols} ) && ref( $opts{protocols} ) ne 'ARRAY' ) {
-		$self->{perror}      = 1;
-		$self->{error}       = 4;
-		$self->{errorString} = 'protocols is defined and type is not array but "' . ref( $opts{protocols} ) . '"';
-		$self->warn;
-	} elsif ( defined( $opts{protocols} ) ) {
-		my %protocols;
-		foreach my $item ( @{ $opts{protocols} } ) {
-			my ( $name, $aliases, $proto ) = getprotobyname($item);
-			# if this is undef, it means it is not a known protocol
-			if ( !defined($proto) ) {
-				$self->{perror} = 1;
-				$self->{error}  = 5;
-				$self->{errorString}
-					= $item . ' could not be resolved to a port name via getservbyname("' . $item . '", "tcp")';
-				$self->warn;
-			}
-			$protocols{$item}=1;
-		} ## end foreach my $item ( @{ $opts{protocols} } )
-		my @protocols_keys=keys(%protocols);
-		@protocols_keys=sort {$a cmp $b} @protocols_keys;
-		push(@{ $self->{protocols}}, @protocols_keys);
-	} ## end elsif ( defined( $opts{protocols} ) )
-
-	# make sure prefix is sane if defiend
-	if ( defined( $opts{prefix} ) && $opts{prefix} !~ /^[a-zA-Z0-9]+$/ ) {
-		$self->{perror} = 1;
-		$self->{error}  = 6;
-		$self->{errorString}
-			= '"' . $opts{prefix} . '" is not a valid prefix as it does not match the regex /^[a-zA-Z0-9]+$/';
-		$self->warn;
-	} elsif ( defined( $opts{prefix} ) ) {
-		$self->{prefix} = $opts{prefix};
-	}
-
-	# make sure we have a name and that it is valid
-	if ( !defined( $opts{name} ) ) {
-		$self->{perror}      = 1;
-		$self->{error}       = 6;
-		$self->{errorString} = 'name is undef';
-		$self->warn;
-	} elsif ( $opts{name} !~ /^[a-zA-Z0-9\-]+$/ ) {
-		$self->{perror}      = 1;
-		$self->{error}       = 6;
-		$self->{errorString} = 'name set to "' . $opts{name} . '" which does not match the regexp  /^[a-zA-Z0-9\-]+$/';
-		$self->warn;
-	}
-	$self->{name} = $opts{name};
-
 	# used internally for testing
 	if ( defined( $opts{testing} ) ) {
 		$self->{testing} = $opts{testing};
@@ -220,6 +165,55 @@ sub new {
 			$self->warn;
 		}
 		$self->{options} = $opts{options};
+
+		if ( !defined( $opts{init} ) ) {
+			$self->{perror}      = 1;
+			$self->{error}       = 2;
+			$self->{errorString} = 'init is not defined';
+			$self->warn;
+		} elsif ( $opts{init} eq '' ) {
+			$self->{perror}      = 1;
+			$self->{error}       = 3;
+			$self->{errorString} = 'init is not blank';
+			$self->warn;
+		} elsif ( !defined( $opts{teardown} ) ) {
+			$self->{perror}      = 1;
+			$self->{error}       = 4;
+			$self->{errorString} = 'teardown is not defined';
+			$self->warn;
+		} elsif ( $opts{teardown} eq '' ) {
+			$self->{perror}      = 1;
+			$self->{error}       = 4;
+			$self->{errorString} = 'teardown is not blank';
+			$self->warn;
+		} elsif ( !defined( $opts{ban} ) ) {
+			$self->{perror}      = 1;
+			$self->{error}       = 5;
+			$self->{errorString} = 'ban is not defined';
+			$self->warn;
+		} elsif ( $opts{ban} eq '' ) {
+			$self->{perror}      = 1;
+			$self->{error}       = 5;
+			$self->{errorString} = 'ban is not blank';
+			$self->warn;
+		} elsif ( !defined( $opts{unban} ) ) {
+			$self->{perror}      = 1;
+			$self->{error}       = 6;
+			$self->{errorString} = 'unban is not defined';
+			$self->warn;
+		} elsif ( $opts{unban} eq '' ) {
+			$self->{perror}      = 1;
+			$self->{error}       = 5;
+			$self->{errorString} = 'unban is not blank';
+			$self->warn;
+		}
+	} else {
+		if ( ref( $opts{options} ) ne 'HASH' ) {
+			$self->{perror}      = 1;
+			$self->{error}       = 3;
+			$self->{errorString} = 'options is undef and not a hash';
+			$self->warn;
+		}
 	}
 
 	return $self;
@@ -244,12 +238,21 @@ sub init {
 		$self->warn;
 	}
 
-	if ($self->{testing}) {
-		$self->{frontend_obj}->{test_data}='inited';
+	my $command = $self->{options}{init};
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = $command;
+	} else {
+		my $output = `$command 2>&1`;
+		if ( $? ne '0' ) {
+			$self->{error}       = 12;
+			$self->{errorString} = 'Init failed... command "' . $command . '" resulted in... ' . $output;
+			$self->warn;
+		}
 	}
 
 	$self->{inited} = 1;
-} ## end sub init_backend
+} ## end sub init
 
 =head2 ban
 
@@ -290,7 +293,19 @@ sub ban {
 		return;
 	}
 
-	$self->{frontend_obj}->{test_data}='banned '.$opts{ban};
+	my $command = $self->{options}{ban};
+	$command =~ s/\%\%\%BAN\%\%\%/$opts{ban}/g;
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = $command;
+	} else {
+		my $output = `$command 2>&1`;
+		if ( $? ne '0' ) {
+			$self->{error}       = 13;
+			$self->{errorString} = 'Ban failed... command "' . $command . '" resulted in... ' . $output;
+			$self->warn;
+		}
+	}
 
 	$self->{banned}{ $opts{ban} } = 1;
 } ## end sub ban
@@ -334,7 +349,19 @@ sub unban {
 		return;
 	}
 
-	$self->{frontend_obj}->{test_data}='unbanned '.$opts{ban};
+	my $command = $self->{options}{unban};
+	$command =~ s/\%\%\%BAN\%\%\%/$opts{ban}/g;
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = $command;
+	} else {
+		my $output = `$command 2>&1`;
+		if ( $? ne '0' ) {
+			$self->{error}       = 14;
+			$self->{errorString} = 'Unban failed... command "' . $command . '" resulted in... ' . $output;
+			$self->warn;
+		}
+	}
 
 	delete( $self->{banned}{ $opts{ban} } );
 } ## end sub unban
@@ -352,7 +379,7 @@ sub list {
 
 	$self->errorblank;
 
-	$self->{frontend_obj}->{test_data}='list';
+	$self->{frontend_obj}->{test_data} = 'list';
 
 	return keys( %{ $self->{banned} } );
 }
@@ -368,10 +395,31 @@ sub re_init {
 
 	$self->errorblank;
 
-	$self->{frontend_obj}->{test_data}='re_inited';
+	$self->teardown;
+	$self->init;
+
+	my @to_re_ban = keys( %{ $self->{banned} } );
+
+	foreach my $items (@to_re_ban) {
+		my $command = $self->{options}{ban};
+		$command =~ s/\%\%\%BAN\%\%\%/$opts{ban}/g;
+
+		if ( !$self->{testing} ) {
+			my $output = `$command 2>&1`;
+			if ( $? ne '0' ) {
+				$self->{error}       = 13;
+				$self->{errorString} = 'Ban failed... command "' . $command . '" resulted in... ' . $output;
+				$self->warn;
+			}
+		}
+	} ## end foreach my $items (@to_re_ban)
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = 're-inited';
+	}
 
 	$self->{inited} = 1;
-}
+} ## end sub re_init
 
 =head2 teardown
 
@@ -382,14 +430,25 @@ Tears down the setup for the backend.
 sub teardown {
 	my ( $self, %opts ) = @_;
 
-	$self->{inited} = 0,
+	$self->{inited} = 0;
 
 	$self->errorblank;
 
-	$self->{frontend_obj}->{test_data}='toredown';
+	my $command = $self->{options}{teardown};
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = $command;
+	} else {
+		my $output = `$command 2>&1`;
+		if ( $? ne '0' ) {
+			$self->{error}       = 17;
+			$self->{errorString} = 'Teardown failed... command "' . $command . '" resulted in... ' . $output;
+			$self->warn;
+		}
+	}
 
 	$self->{inited} = 0;
-}
+} ## end sub teardown
 
 =head1 ERROR CODES / FLAGS
 
@@ -397,29 +456,25 @@ sub teardown {
 
 Backend has not been initted yet.
 
-=head2 2, invalidPortSpecified
+=head2 2, initInvalid
 
-Port is either not a positive int or a name that can be resolved by getservbyname.
+'init' for options hash is invalid. Either undef or blank.
 
-=head2 3, portsNotArray
+=head 3, optionsUndef
 
-The data passed to new for ports is not an array.
+Options is not a hash.
 
-=head2 4, protocolsNotArray
+=head2 4, teardownInvalid
 
-The data passed to new for protocols is not an array.
+'teardown' for options hash is invalid. Either undef or blank.
 
-=head2 5, invalidPortSpecified
+=head2 5, banInvalid
 
-Port is either not a positive int or a name that can be resolved by getservbyname.
+'ban' for options hash is invalid. Either undef or blank.
 
-=head2 6, invalidPrefixSpecified
+=head2 6, unbanInvalid
 
-The specified prefix did not match /^[a-zA-Z0-9]+$/.
-
-=head2 7, invalidName
-
-The name is either undef or does not match /^[a-zA-Z0-9\-]+$/.
+'unban' for options hash is invalid. Either undef or blank.
 
 =head2 8, optionsNotHash
 
