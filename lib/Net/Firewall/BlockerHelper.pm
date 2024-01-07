@@ -9,7 +9,7 @@ use Regexp::IPv6 qw($IPv6_re);
 
 =head1 NAME
 
-Net::Firewall::BlockerHelper - 
+Net::Firewall::BlockerHelper - Helps with managing firewalls for banning IPs.
 
 =head1 VERSION
 
@@ -23,9 +23,46 @@ our $VERSION = '0.0.1';
 
     use Net::Firewall::BlockerHelper;
 
-    my $fw_helper = Net::Firewall::BlockerHelper->new();
-    ...
+    # create a instance named ssh with a ipfw backend for port 22 tcp
+    my $fw_helper;
+    eval {
+        $fw_helper = Net::Firewall::BlockerHelper->new(
+                backend => 'ipfw',
+                ports => ['22'],
+                protocols => ['tcp'],
+                name => 'ssh',
+            );
+    };
+    if ($@) {
+        print 'Error: '
+            . $Error::Helper::error
+            . "\nError String: "
+            . $Error::Helper::errorString
+            . "\nError Flag: "
+            . $Error::Helper::errorFlag . "\n";
+    }
 
+    # start the backend
+    $fw_helper->init_backend;
+
+    # ban some IPs
+    $fw_helper->ban(ban => '1.2.3.4');
+    $fw_helper->ban(ban => '5.6.7.8');
+
+    # unban a IP
+    $fw_helper->unban(ban => '1.2.3.4');
+
+    # get a list of banned IPs
+    my @banned = $fw_helper->list;
+    foreach my $ip (@banned) {
+        print 'Banned IP: '.$ip."\n";
+    }
+
+    # teardown the backend, re-init, and re-ban everything
+    $fw_helper->re_init;
+
+    # teardown the backend
+    $fw_helper->teardown;
 
 =head1 METHODS
 
@@ -249,6 +286,8 @@ Initiates the backend.
 
 No arguments are taken.
 
+    $fw_helper->init_backend;
+
 =cut
 
 sub init_backend {
@@ -342,7 +381,7 @@ sub ban {
 
 Unbans the an IP.
 
-    $fw_helper->ban(ban => $ip);
+    $fw_helper->unban(ban => $ip);
 
 =cut
 
@@ -449,6 +488,9 @@ sub teardown {
 } ## end sub teardown
 
 =head1 ERROR CODES / FLAGS
+
+Error handling is provided by L<Error::Helper>. All
+errors are considered fatal.
 
 =head2 1, noBackendSpecified
 
