@@ -23,6 +23,8 @@ our $VERSION = '0.0.1';
 
     use Net::Firewall::BlockerHelper::backends::iptables;
 
+    my $backend1;
+    my $backend2;
     eval {
         $backend1 = Net::Firewall::BlockerHelper::backends::iptables->new(
                 name => 'all',
@@ -649,6 +651,9 @@ sub teardown {
 } ## end sub teardown
 
 =head1 ERROR CODES / FLAGS
+
+Error handling is provided by L<Error::Helper>. All
+errors are considered fatal.
 
 =head2 1, notInited
 

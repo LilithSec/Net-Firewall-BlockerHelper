@@ -500,7 +500,7 @@ sub init {
 
 Bans the IP.
 
-    $fw_helper->ban(ban => $ip);
+    $backend->ban(ban => $ip);
 
 =cut
 
@@ -583,7 +583,7 @@ sub ban {
 
 Unbans the an IP.
 
-    $fw_helper->ban(ban => $ip);
+    $backend->ban(ban => $ip);
 
 =cut
 
@@ -644,7 +644,7 @@ sub unban {
 
 List banned IPs.
 
-    my @banned = $fw_helper->list;
+    my @banned = $backend->list;
 
 =cut
 
@@ -752,6 +752,9 @@ sub teardown {
 } ## end sub teardown
 
 =head1 ERROR CODES / FLAGS
+
+Error handling is provided by L<Error::Helper>. All
+errors are considered fatal.
 
 =head2 1, notInited
 

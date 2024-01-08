@@ -21,11 +21,50 @@ our $VERSION = '0.0.1';
 
 =head1 SYNOPSIS
 
-    use Net::Firewall::BlockerHelper;
+    use Net::Firewall::BlockerHelper::backends::dummy;
 
-    my $fw_helper = Net::Firewall::BlockerHelper::backends::dummy->new();
-    ...
+    # create a backend named ssh with a dummy backend for port 22 tcp
+    my $backend;
+    eval {
+        $backend = Net::Firewall::BlockerHelper::backends::dummy->new(
+                backend => 'dummy',
+                ports => ['22'],
+                protocols => ['tcp'],
+                name => 'ssh',
+            );
+    };
+    if ($@) {
+        print 'Error: '
+            . $Error::Helper::error
+            . "\nError String: "
+            . $Error::Helper::errorString
+            . "\nError Flag: "
+            . $Error::Helper::errorFlag . "\n";
+    }
 
+    $backend->init;
+
+    # start the backend
+    $backend->init_backend;
+
+    # ban some IPs
+    $backend->ban(ban => '1.2.3.4');
+    $backend->ban(ban => '5.6.7.8');
+
+    # unban a IP
+    $backend->unban(ban => '1.2.3.4');
+
+    # get a list of banned IPs
+    my @banned = $backend->list;
+    foreach my $ip (@banned) {
+        print 'Banned IP: '.$ip."\n";
+    }
+
+    # teardown the backend, re-init, and re-ban everything
+    $backend->re_init;
+
+    # teardown the backend
+    $backend->teardown;
 
 =head1 METHODS
 
@@ -53,9 +92,9 @@ Initiates the the object.
 
 All errors are considered fatal, meaning if new fails it will die.
 
-    my $fw_helper;
+    my $backend;
     eval {
-        $fw_helper = Net::Firewall::BlockerHelper->new(
+        $backend = Net::Firewall::BlockerHelper::backends::dummy->new(
                 backend => 'ipfw',
                 ports => ['22'],
                 protocols => ['tcp'],
@@ -130,7 +169,7 @@ sub new {
 		my %ports;
 		foreach my $item ( @{ $opts{ports} } ) {
 			if ( $item =~ /^[0-9]+$/ && $item >= 1 ) {
-				$ports{$item}=1;
+				$ports{$item} = 1;
 			} elsif ( $item =~ /^[0-9]+$/ && $item < 1 ) {
 				$self->{perror} = 1;
 				$self->{error}  = 2;
@@ -147,12 +186,12 @@ sub new {
 						= $item . ' could not be resolved to a port name via getservbyname("' . $item . '", "tcp")';
 					$self->warn;
 				}
-				$ports{$port}=1;
+				$ports{$port} = 1;
 			} ## end else [ if ( $item =~ /^[0-9]+$/ && $item >= 1 ) ]
 		} ## end foreach my $item ( @{ $opts{ports} } )
-		my @port_keys=keys(%ports);
-		@port_keys=sort {$a <=> $b} @port_keys;
-		push(@{ $self->{ports}}, @port_keys);
+		my @port_keys = keys(%ports);
+		@port_keys = sort { $a <=> $b } @port_keys;
+		push( @{ $self->{ports} }, @port_keys );
 	} ## end elsif ( defined( $opts{ports} ) )
 
 	if ( defined( $opts{protocols} ) && ref( $opts{protocols} ) ne 'ARRAY' ) {
@@ -172,11 +211,11 @@ sub new {
 					= $item . ' could not be resolved to a port name via getservbyname("' . $item . '", "tcp")';
 				$self->warn;
 			}
-			$protocols{$item}=1;
+			$protocols{$item} = 1;
 		} ## end foreach my $item ( @{ $opts{protocols} } )
-		my @protocols_keys=keys(%protocols);
-		@protocols_keys=sort {$a cmp $b} @protocols_keys;
-		push(@{ $self->{protocols}}, @protocols_keys);
+		my @protocols_keys = keys(%protocols);
+		@protocols_keys = sort { $a cmp $b } @protocols_keys;
+		push( @{ $self->{protocols} }, @protocols_keys );
 	} ## end elsif ( defined( $opts{protocols} ) )
 
 	# make sure prefix is sane if defiend
@@ -231,6 +270,8 @@ Initiates the backend.
 
 No arguments are taken.
 
+    $backend->init;
+
 =cut
 
 sub init {
@@ -244,18 +285,18 @@ sub init {
 		$self->warn;
 	}
 
-	if ($self->{testing}) {
-		$self->{frontend_obj}->{test_data}='inited';
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = 'inited';
 	}
 
 	$self->{inited} = 1;
-} ## end sub init_backend
+} ## end sub init
 
 =head2 ban
 
 Bans the IP.
 
-    $fw_helper->ban(ban => $ip);
+    $backend->ban(ban => $ip);
 
 =cut
 
@@ -290,7 +331,7 @@ sub ban {
 		return;
 	}
 
-	$self->{frontend_obj}->{test_data}='banned '.$opts{ban};
+	$self->{frontend_obj}->{test_data} = 'banned ' . $opts{ban};
 
 	$self->{banned}{ $opts{ban} } = 1;
 } ## end sub ban
@@ -299,7 +340,7 @@ sub ban {
 
 Unbans the an IP.
 
-    $fw_helper->ban(ban => $ip);
+    $backend->ban(ban => $ip);
 
 =cut
 
@@ -334,7 +375,7 @@ sub unban {
 		return;
 	}
 
-	$self->{frontend_obj}->{test_data}='unbanned '.$opts{ban};
+	$self->{frontend_obj}->{test_data} = 'unbanned ' . $opts{ban};
 
 	delete( $self->{banned}{ $opts{ban} } );
 } ## end sub unban
@@ -343,7 +384,7 @@ sub unban {
 
 List banned IPs.
 
-    my @banned = $fw_helper->list;
+    my @banned = $backend->list;
 
 =cut
 
@@ -352,7 +393,7 @@ sub list {
 
 	$self->errorblank;
 
-	$self->{frontend_obj}->{test_data}='list';
+	$self->{frontend_obj}->{test_data} = 'list';
 
 	return keys( %{ $self->{banned} } );
 }
@@ -368,7 +409,7 @@ sub re_init {
 
 	$self->errorblank;
 
-	$self->{frontend_obj}->{test_data}='re_inited';
+	$self->{frontend_obj}->{test_data} = 're_inited';
 
 	$self->{inited} = 1;
 }
@@ -377,6 +418,8 @@ sub re_init {
 
 Tears down the setup for the backend.
 
+    $backend->teardown;
+
 =cut
 
 sub teardown {
@@ -384,14 +427,17 @@ sub teardown {
 
 	$self->{inited} = 0,
 
-	$self->errorblank;
+		$self->errorblank;
 
-	$self->{frontend_obj}->{test_data}='toredown';
+	$self->{frontend_obj}->{test_data} = 'toredown';
 
 	$self->{inited} = 0;
-}
+} ## end sub teardown
 
 =head1 ERROR CODES / FLAGS
+
+Error handling is provided by L<Error::Helper>. All
+errors are considered fatal.
 
 =head2 1, notInited
 
