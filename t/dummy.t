@@ -3,12 +3,7 @@ use 5.006;
 use strict;
 use warnings;
 use Test::More;
-use Rex::CMDB;
-use Rex -feature => [qw/1.4/];
 use Data::Dumper;
-
-# prevents Rex from printing out rex is exiting after the script ends
-$::QUIET = 2;
 
 BEGIN {
 	use_ok('Net::Firewall::BlockerHelper') || print "Bail out!\n";
