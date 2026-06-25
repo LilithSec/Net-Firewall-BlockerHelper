@@ -366,7 +366,7 @@ sub init {
 		foreach my $item (@commands) {
 			my $output = `$item 2>&1`;
 			if ( $? ne '0' ) {
-				$self->{error} = 22;
+				$self->{error} = 23;
 				$self->{errorString}
 					= 'init failed. non-zero exit code for the command... "' . $item . '"... output... ' . $output;
 				$self->warn;

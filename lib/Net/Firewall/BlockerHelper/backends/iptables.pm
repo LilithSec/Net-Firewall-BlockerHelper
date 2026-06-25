@@ -1,4 +1,4 @@
-package Net::Firewall::BlockerHelper::backends::ipfw;
+package Net::Firewall::BlockerHelper::backends::iptables;
 
 use 5.006;
 use strict;
