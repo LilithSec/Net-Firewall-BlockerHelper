@@ -199,7 +199,7 @@ sub new {
 		} elsif ( $opts{options}{ban} eq '' ) {
 			$self->{perror}      = 1;
 			$self->{error}       = 5;
-			$self->{errorString} = 'ban is not blank';
+			$self->{errorString} = 'ban is blank';
 			$self->warn;
 		} elsif ( !defined( $opts{options}{unban} ) ) {
 			$self->{perror}      = 1;

@@ -381,12 +381,12 @@ sub init {
 	if ( $self->{testing} ) {
 		$self->{frontend_obj}->{test_data}{commands} = \@commands;
 	} else {
-		foreach my $item (@fail_okay_commands) {
+		foreach my $item (@commands) {
 			my $output = `$item 2>&1`;
 			if ( $? ne '0' ) {
 				$self->{error} = 22;
 				$self->{errorString}
-					= 'init failed. non-zero exit code for the dommand... "' . $item . '"... output... ' . $output;
+					= 'init failed. non-zero exit code for the command... "' . $item . '"... output... ' . $output;
 				$self->warn;
 			}
 		}
