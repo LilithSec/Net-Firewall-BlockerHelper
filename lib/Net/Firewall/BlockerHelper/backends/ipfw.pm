@@ -347,29 +347,29 @@ sub new {
 			$self->{options}{type} = 'deny';
 		}
 
-		if ( defined( $opts{optsions}{unreach} ) && ref( $opts{options}{unreach} ) ne '' ) {
+		if ( defined( $opts{options}{unreach} ) && ref( $opts{options}{unreach} ) ne '' ) {
 			$self->{perror} = 1;
 			$self->{error}  = 21;
 			$self->{errorString}
 				= 'ref for $opts{options}{unreach} is "' . ref( $opts{options}{unreach} ) . '" and not ""';
 			$self->warn;
-		} elsif ( defined( $opts{optsions}{unreach} )
-			&& $opts{optsions}{unreach} ne 'net'
-			&& $opts{optsions}{unreach} ne 'host'
-			&& $opts{optsions}{unreach} ne 'protocol'
-			&& $opts{optsions}{unreach} ne 'port'
-			&& $opts{optsions}{unreach} ne 'needfrag'
-			&& $opts{optsions}{unreach} ne 'srcfail'
-			&& $opts{optsions}{unreach} ne 'net-unknown'
-			&& $opts{optsions}{unreach} ne 'host-unknown'
-			&& $opts{optsions}{unreach} ne 'isolated'
-			&& $opts{optsions}{unreach} ne 'net-prohib'
-			&& $opts{optsions}{unreach} ne 'host-prohib'
-			&& $opts{optsions}{unreach} ne 'tosnet'
-			&& $opts{optsions}{unreach} ne 'toshost'
-			&& $opts{optsions}{unreach} ne 'filter-prohib'
-			&& $opts{optsions}{unreach} ne 'host-precedence'
-			&& $opts{optsions}{unreach} ne 'precedence-cutoff' )
+		} elsif ( defined( $opts{options}{unreach} )
+			&& $opts{options}{unreach} ne 'net'
+			&& $opts{options}{unreach} ne 'host'
+			&& $opts{options}{unreach} ne 'protocol'
+			&& $opts{options}{unreach} ne 'port'
+			&& $opts{options}{unreach} ne 'needfrag'
+			&& $opts{options}{unreach} ne 'srcfail'
+			&& $opts{options}{unreach} ne 'net-unknown'
+			&& $opts{options}{unreach} ne 'host-unknown'
+			&& $opts{options}{unreach} ne 'isolated'
+			&& $opts{options}{unreach} ne 'net-prohib'
+			&& $opts{options}{unreach} ne 'host-prohib'
+			&& $opts{options}{unreach} ne 'tosnet'
+			&& $opts{options}{unreach} ne 'toshost'
+			&& $opts{options}{unreach} ne 'filter-prohib'
+			&& $opts{options}{unreach} ne 'host-precedence'
+			&& $opts{options}{unreach} ne 'precedence-cutoff' )
 		{
 			$self->{perror} = 1;
 			$self->{error}  = 21;
@@ -382,17 +382,17 @@ sub new {
 			$self->{options}{unreach} = 'port';
 		}
 
-		if ( defined( $opts{optsions}{unreach6} ) && ref( $opts{options}{unreach6} ) ne '' ) {
+		if ( defined( $opts{options}{unreach6} ) && ref( $opts{options}{unreach6} ) ne '' ) {
 			$self->{perror} = 1;
 			$self->{error}  = 22;
 			$self->{errorString}
 				= 'ref for $opts{options}{unreach6} is "' . ref( $opts{options}{unreach6} ) . '" and not ""';
 			$self->warn;
-		} elsif ( defined( $opts{optsions}{unreach6} )
-			&& $opts{optsions}{unreach6} ne 'no-route'
-			&& $opts{optsions}{unreach6} ne 'admin-prohib'
-			&& $opts{optsions}{unreach6} ne 'address'
-			&& $opts{optsions}{unreach6} ne 'port' )
+		} elsif ( defined( $opts{options}{unreach6} )
+			&& $opts{options}{unreach6} ne 'no-route'
+			&& $opts{options}{unreach6} ne 'admin-prohib'
+			&& $opts{options}{unreach6} ne 'address'
+			&& $opts{options}{unreach6} ne 'port' )
 		{
 			$self->{perror} = 1;
 			$self->{error}  = 22;
