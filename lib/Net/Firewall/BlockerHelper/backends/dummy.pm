@@ -429,7 +429,7 @@ sub teardown {
 
 		$self->errorblank;
 
-	$self->{frontend_obj}->{test_data} = 'toredown';
+	$self->{frontend_obj}->{test_data} = 'teardown';
 
 	$self->{inited} = 0;
 } ## end sub teardown
