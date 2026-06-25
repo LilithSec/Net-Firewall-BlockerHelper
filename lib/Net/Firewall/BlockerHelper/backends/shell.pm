@@ -189,7 +189,7 @@ sub new {
 		} elsif ( $opts{options}{teardown} eq '' ) {
 			$self->{perror}      = 1;
 			$self->{error}       = 4;
-			$self->{errorString} = 'teardown is not blank';
+			$self->{errorString} = 'teardown is blank';
 			$self->warn;
 		} elsif ( !defined( $opts{options}{ban} ) ) {
 			$self->{perror}      = 1;

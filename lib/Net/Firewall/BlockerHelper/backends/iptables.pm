@@ -286,14 +286,14 @@ sub new {
 		}
 		$self->{options} = $opts{options};
 
-		if ( defined( $opts{optsions}{type} ) && ref( $opts{options}{type} ) ne '' ) {
+		if ( defined( $opts{options}{type} ) && ref( $opts{options}{type} ) ne '' ) {
 			$self->{perror}      = 1;
 			$self->{error}       = 20;
 			$self->{errorString} = 'ref for $opts{options}{type} is "' . ref( $opts{options}{type} ) . '" and not ""';
 			$self->warn;
-		} elsif ( defined( $opts{optsions}{type} )
-			&& $opts{optsions}{type} ne 'unreach'
-			&& $opts{optsions}{type} ne 'unreach6' )
+		} elsif ( defined( $opts{options}{type} )
+			&& $opts{options}{type} ne 'unreach'
+			&& $opts{options}{type} ne 'unreach6' )
 		{
 			$self->{perror} = 1;
 			$self->{error}  = 20;
