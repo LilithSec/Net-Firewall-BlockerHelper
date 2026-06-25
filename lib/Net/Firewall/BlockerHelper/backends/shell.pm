@@ -179,7 +179,7 @@ sub new {
 		} elsif ( $opts{options}{init} eq '' ) {
 			$self->{perror}      = 1;
 			$self->{error}       = 3;
-			$self->{errorString} = 'init is not blank';
+			$self->{errorString} = 'init is blank';
 			$self->warn;
 		} elsif ( !defined( $opts{options}{teardown} ) ) {
 			$self->{perror}      = 1;
@@ -208,8 +208,8 @@ sub new {
 			$self->warn;
 		} elsif ( $opts{options}{unban} eq '' ) {
 			$self->{perror}      = 1;
-			$self->{error}       = 5;
-			$self->{errorString} = 'unban is not blank';
+			$self->{error}       = 6;
+			$self->{errorString} = 'unban is blank';
 			$self->warn;
 		}
 	} else {
