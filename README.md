@@ -5,6 +5,7 @@ Helps manage (un)blocking IPs via various firewalls.
 Currently included backends are for...
 
 - ipfw
+- iptables
 - pf
 
 The following generic backends are available.
@@ -14,10 +15,6 @@ The following generic backends are available.
 And the following example/testing backends are available.
 
 - dummy
-
-On the todo list...
-
-- iptables
 
 ```perl
     use Net::Firewall::BlockerHelper;

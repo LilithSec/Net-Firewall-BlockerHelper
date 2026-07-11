@@ -253,7 +253,7 @@ sub new {
 				$self->{perror} = 1;
 				$self->{error}  = 5;
 				$self->{errorString}
-					= $item . ' could not be resolved to a port name via getservbyname("' . $item . '", "tcp")';
+					= $item . ' could not be resolved to a protocol via getprotobyname("' . $item . '")';
 				$self->warn;
 			}
 			$protocols{$item} = 1;
@@ -277,12 +277,12 @@ sub new {
 	# make sure we have a name and that it is valid
 	if ( !defined( $opts{name} ) ) {
 		$self->{perror}      = 1;
-		$self->{error}       = 6;
+		$self->{error}       = 7;
 		$self->{errorString} = 'name is undef';
 		$self->warn;
 	} elsif ( $opts{name} !~ /^[a-zA-Z0-9\-]+$/ ) {
 		$self->{perror}      = 1;
-		$self->{error}       = 6;
+		$self->{error}       = 7;
 		$self->{errorString} = 'name set to "' . $opts{name} . '" which does not match the regexp  /^[a-zA-Z0-9\-]+$/';
 		$self->warn;
 	}
@@ -484,7 +484,7 @@ sub init {
 	} else {
 		foreach my $item (@commands) {
 			my $output = `$item 2>&1`;
-			if ( $? ne '0' ) {
+			if ( $? != 0 ) {
 				$self->{error} = 23;
 				$self->{errorString}
 					= 'init failed. non-zero exit code for the command... "' . $item . '"... output... ' . $output;
@@ -526,8 +526,8 @@ sub ban {
 		$self->{errorString} = 'Bad ref type for ban... ref is "' . ref( $opts{ban} ) . '"';
 		$self->warn;
 		return;
-	} elsif ( $opts{ban} !~ /$IPv4_re/
-		&& $opts{ban} !~ /$IPv6_re/ )
+	} elsif ( $opts{ban} !~ /\A$IPv4_re\z/
+		&& $opts{ban} !~ /\A$IPv6_re\z/ )
 	{
 		$self->{error}       = 10;
 		$self->{errorString} = 'ban item,"' . $opts{ban} . '", does not appear to be a IPv4 or IPv6 IP';
@@ -536,7 +536,9 @@ sub ban {
 	}
 
 	if ( $self->{banned}{ $opts{ban} } ) {
-		$self->{frontend_obj}->{test_data} = 'already banned';
+		if ( $self->{testing} ) {
+			$self->{frontend_obj}->{test_data} = 'already banned';
+		}
 		return;
 	}
 
@@ -546,7 +548,7 @@ sub ban {
 		$self->{frontend_obj}->{test_data} = [$command];
 	} else {
 		my $output = `$command 2>&1`;
-		if ( $? ne '0' ) {
+		if ( $? != 0 ) {
 			$self->{error} = 13;
 			$self->{errorString}
 				= 'ban failed. non-zero exit code for the command... "' . $command . '"... output... ' . $output;
@@ -609,8 +611,8 @@ sub unban {
 		$self->{errorString} = 'Bad ref type for ban... ref is "' . ref( $opts{ban} ) . '"';
 		$self->warn;
 		return;
-	} elsif ( $opts{ban} !~ /$IPv4_re/
-		&& $opts{ban} !~ /$IPv6_re/ )
+	} elsif ( $opts{ban} !~ /\A$IPv4_re\z/
+		&& $opts{ban} !~ /\A$IPv6_re\z/ )
 	{
 		$self->{error}       = 10;
 		$self->{errorString} = 'ban item,"' . $opts{ban} . '", does not appear to be a IPv4 or IPv6 IP';
@@ -619,7 +621,9 @@ sub unban {
 	}
 
 	if ( !$self->{banned}{ $opts{ban} } ) {
-		$self->{frontend_obj}->{test_data} = 'not banned';
+		if ( $self->{testing} ) {
+			$self->{frontend_obj}->{test_data} = 'not banned';
+		}
 		return;
 	}
 
@@ -629,7 +633,7 @@ sub unban {
 		$self->{frontend_obj}->{test_data} = $command;
 	} else {
 		my $output = `$command 2>&1`;
-		if ( $? ne '0' ) {
+		if ( $? != 0 ) {
 			$self->{error} = 14;
 			$self->{errorString}
 				= 'unban failed. non-zero exit code for the command... "' . $command . '"... output... ' . $output;
@@ -653,7 +657,9 @@ sub list {
 
 	$self->errorblank;
 
-	$self->{frontend_obj}->{test_data} = 'list';
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = 'list';
+	}
 
 	return keys( %{ $self->{banned} } );
 }
@@ -694,7 +700,7 @@ sub re_init {
 			push( @re_init_test_data, $command );
 		} else {
 			my $output = `$command 2>&1`;
-			if ( $? ne '0' ) {
+			if ( $? != 0 ) {
 				$self->{error} = 13;
 				$self->{errorString}
 					= 'ban failed. non-zero exit code for the command... "' . $command . '"... output... ' . $output;
@@ -741,7 +747,7 @@ sub teardown {
 	} else {
 		foreach my $item (@commands) {
 			my $output = `$item  2>&1`;
-			if ( $? ne '0' ) {
+			if ( $? != 0 ) {
 				$self->{error} = 17;
 				$self->{errorString}
 					= 'teardown failed. non-zero exit code for the command... "' . $item . '"... output... ' . $output;

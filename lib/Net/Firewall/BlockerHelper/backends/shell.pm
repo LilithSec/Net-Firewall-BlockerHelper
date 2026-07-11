@@ -249,7 +249,7 @@ sub init {
 		$self->{frontend_obj}->{test_data} = $command;
 	} else {
 		my $output = `$command 2>&1`;
-		if ( $? ne '0' ) {
+		if ( $? != 0 ) {
 			$self->{error}       = 12;
 			$self->{errorString} = 'Init failed... command "' . $command . '" resulted in... ' . $output;
 			$self->warn;
@@ -289,8 +289,8 @@ sub ban {
 		$self->{errorString} = 'Bad ref type for ban... ref is "' . ref( $opts{ban} ) . '"';
 		$self->warn;
 		return;
-	} elsif ( $opts{ban} !~ /$IPv4_re/
-		&& $opts{ban} !~ /$IPv6_re/ )
+	} elsif ( $opts{ban} !~ /\A$IPv4_re\z/
+		&& $opts{ban} !~ /\A$IPv6_re\z/ )
 	{
 		$self->{error}       = 10;
 		$self->{errorString} = 'ban item,"' . $opts{ban} . '", does not appear to be a IPv4 or IPv6 IP';
@@ -305,7 +305,7 @@ sub ban {
 		$self->{frontend_obj}->{test_data} = $command;
 	} else {
 		my $output = `$command 2>&1`;
-		if ( $? ne '0' ) {
+		if ( $? != 0 ) {
 			$self->{error}       = 13;
 			$self->{errorString} = 'Ban failed... command "' . $command . '" resulted in... ' . $output;
 			$self->warn;
@@ -345,8 +345,8 @@ sub unban {
 		$self->{errorString} = 'Bad ref type for ban... ref is "' . ref( $opts{ban} ) . '"';
 		$self->warn;
 		return;
-	} elsif ( $opts{ban} !~ /$IPv4_re/
-		&& $opts{ban} !~ /$IPv6_re/ )
+	} elsif ( $opts{ban} !~ /\A$IPv4_re\z/
+		&& $opts{ban} !~ /\A$IPv6_re\z/ )
 	{
 		$self->{error}       = 10;
 		$self->{errorString} = 'ban item,"' . $opts{ban} . '", does not appear to be a IPv4 or IPv6 IP';
@@ -361,7 +361,7 @@ sub unban {
 		$self->{frontend_obj}->{test_data} = $command;
 	} else {
 		my $output = `$command 2>&1`;
-		if ( $? ne '0' ) {
+		if ( $? != 0 ) {
 			$self->{error}       = 14;
 			$self->{errorString} = 'Unban failed... command "' . $command . '" resulted in... ' . $output;
 			$self->warn;
@@ -384,7 +384,9 @@ sub list {
 
 	$self->errorblank;
 
-	$self->{frontend_obj}->{test_data} = 'list';
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = 'list';
+	}
 
 	return keys( %{ $self->{banned} } );
 }
@@ -400,6 +402,13 @@ sub re_init {
 
 	$self->errorblank;
 
+	if ( !$self->{inited} ) {
+		$self->{error}       = 1;
+		$self->{errorString} = 'backend has not been inited';
+		$self->warn;
+		return;
+	}
+
 	$self->teardown;
 	$self->init;
 
@@ -411,7 +420,7 @@ sub re_init {
 
 		if ( !$self->{testing} ) {
 			my $output = `$command 2>&1`;
-			if ( $? ne '0' ) {
+			if ( $? != 0 ) {
 				$self->{error}       = 13;
 				$self->{errorString} = 'Ban failed... command "' . $command . '" resulted in... ' . $output;
 				$self->warn;
@@ -445,7 +454,7 @@ sub teardown {
 		$self->{frontend_obj}->{test_data} = $command;
 	} else {
 		my $output = `$command 2>&1`;
-		if ( $? ne '0' ) {
+		if ( $? != 0 ) {
 			$self->{error}       = 17;
 			$self->{errorString} = 'Teardown failed... command "' . $command . '" resulted in... ' . $output;
 			$self->warn;
@@ -465,7 +474,7 @@ Backend has not been initted yet.
 
 'init' for options hash is invalid. Either undef or blank.
 
-=head 3, optionsUndef
+=head2 3, optionsUndef
 
 Options is not a hash.
 

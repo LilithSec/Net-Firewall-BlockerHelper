@@ -44,9 +44,6 @@ our $VERSION = '0.0.1';
 
     $backend->init;
 
-    # start the backend
-    $backend->init_backend;
-
     # ban some IPs
     $backend->ban(ban => '1.2.3.4');
     $backend->ban(ban => '5.6.7.8');
@@ -95,7 +92,7 @@ All errors are considered fatal, meaning if new fails it will die.
     my $backend;
     eval {
         $backend = Net::Firewall::BlockerHelper::backends::dummy->new(
-                backend => 'ipfw',
+                backend => 'dummy',
                 ports => ['22'],
                 protocols => ['tcp'],
                 name => 'ssh',
@@ -208,7 +205,7 @@ sub new {
 				$self->{perror} = 1;
 				$self->{error}  = 5;
 				$self->{errorString}
-					= $item . ' could not be resolved to a port name via getservbyname("' . $item . '", "tcp")';
+					= $item . ' could not be resolved to a protocol via getprotobyname("' . $item . '")';
 				$self->warn;
 			}
 			$protocols{$item} = 1;
@@ -232,12 +229,12 @@ sub new {
 	# make sure we have a name and that it is valid
 	if ( !defined( $opts{name} ) ) {
 		$self->{perror}      = 1;
-		$self->{error}       = 6;
+		$self->{error}       = 7;
 		$self->{errorString} = 'name is undef';
 		$self->warn;
 	} elsif ( $opts{name} !~ /^[a-zA-Z0-9\-]+$/ ) {
 		$self->{perror}      = 1;
-		$self->{error}       = 6;
+		$self->{error}       = 7;
 		$self->{errorString} = 'name set to "' . $opts{name} . '" which does not match the regexp  /^[a-zA-Z0-9\-]+$/';
 		$self->warn;
 	}
@@ -322,8 +319,8 @@ sub ban {
 		$self->{errorString} = 'Bad ref type for ban... ref is "' . ref( $opts{ban} ) . '"';
 		$self->warn;
 		return;
-	} elsif ( $opts{ban} !~ /$IPv4_re/
-		&& $opts{ban} !~ /$IPv6_re/ )
+	} elsif ( $opts{ban} !~ /\A$IPv4_re\z/
+		&& $opts{ban} !~ /\A$IPv6_re\z/ )
 	{
 		$self->{error}       = 10;
 		$self->{errorString} = 'ban item,"' . $opts{ban} . '", does not appear to be a IPv4 or IPv6 IP';
@@ -366,8 +363,8 @@ sub unban {
 		$self->{errorString} = 'Bad ref type for ban... ref is "' . ref( $opts{ban} ) . '"';
 		$self->warn;
 		return;
-	} elsif ( $opts{ban} !~ /$IPv4_re/
-		&& $opts{ban} !~ /$IPv6_re/ )
+	} elsif ( $opts{ban} !~ /\A$IPv4_re\z/
+		&& $opts{ban} !~ /\A$IPv6_re\z/ )
 	{
 		$self->{error}       = 10;
 		$self->{errorString} = 'ban item,"' . $opts{ban} . '", does not appear to be a IPv4 or IPv6 IP';
@@ -425,9 +422,7 @@ Tears down the setup for the backend.
 sub teardown {
 	my ( $self, %opts ) = @_;
 
-	$self->{inited} = 0,
-
-		$self->errorblank;
+	$self->errorblank;
 
 	$self->{frontend_obj}->{test_data} = 'teardown';
 

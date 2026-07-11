@@ -2,6 +2,7 @@ Changes
 lib/Net/Firewall/BlockerHelper.pm
 lib/Net/Firewall/BlockerHelper/backends/dummy.pm
 lib/Net/Firewall/BlockerHelper/backends/ipfw.pm
+lib/Net/Firewall/BlockerHelper/backends/iptables.pm
 lib/Net/Firewall/BlockerHelper/backends/pf.pm
 lib/Net/Firewall/BlockerHelper/backends/shell.pm
 Makefile.PL
@@ -13,11 +14,14 @@ t/01-load__Net__Firewall__Blocker__backends__dummy.t
 t/02-load__Net__Firewall__Blocker__backends__ipfw.t
 t/03-load__Net__Firewall__Blocker__backends__pf.t
 t/04-load__Net__Firewall__Blocker__backends__shell.t
+t/05-load__Net__Firewall__Blocker__backends__iptables.t
 t/dummy.t
 t/ipfw.t
+t/iptables.t
 t/manifest.t
 t/new.t
 t/pf.t
 t/pod-coverage.t
 t/pod.t
 t/shell.t
+t/shell_new.t
