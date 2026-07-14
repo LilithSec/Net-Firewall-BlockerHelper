@@ -73,9 +73,17 @@ C<filter> tables. The chain is populated with the block rules and jumped
 to from C<INPUT>. Banning an IP is then simply a matter of adding it to
 the relevant ipset.
 
+When the C<tarpit> or C<delude> type is used a same-named chain is also
+created in the C<raw> table and jumped to from C<PREROUTING>, holding
+C<< -j CT --notrack >> rules that match the same traffic. This exempts the
+tarpitted/deluded connections from connection tracking, which those
+xtables-addons targets require to work. It is created and removed
+automatically with the filter chain.
+
 Requires C<ipset>, C<iptables>, and C<ip6tables> to be installed and in
 the C<PATH> of the process, which must have sufficient privileges to run
-them.
+them. The C<tarpit>/C<delude> types additionally require the C<TARPIT>/
+C<DELUDE> targets from xtables-addons.
 
 =head1 METHODS
 
@@ -105,9 +113,30 @@ Initiates the the object.
 
 The options hash accepts the following.
 
-    - type :: The drop method to use. Should either be 'drop' or 'reject'.
-            'reject' sends an ICMP port-unreachable back. See iptables(8).
+    - type :: The block method to use. One of 'drop', 'reject', 'tarpit',
+            or 'delude'.
+                - drop   :: Silently drop the packet. See iptables(8).
+                - reject :: Send an ICMP port-unreachable back. See iptables(8).
+                - tarpit :: Hold the TCP connection open with a zero window so
+                        the attacker wastes resources. Requires the TARPIT
+                        target from xtables-addons. TCP only.
+                - delude :: Answer a SYN with a SYN/ACK and everything else with
+                        a RST, so the port looks open but never completes a
+                        session. Requires the DELUDE target from xtables-addons.
+                        TCP only.
+            The tarpit and delude types only ever emit '-p tcp' rules; any
+            non-tcp protocol or port default (eg the implicit udp) is skipped
+            rather than handed to a target the kernel would reject. For these
+            types the backend also installs a matching '-j CT --notrack' rule
+            in a raw table chain jumped from PREROUTING, so conntrack does not
+            process (and fight) the crafted replies; this is set up and torn
+            down automatically alongside the filter chain.
         - Default :: drop
+
+    - tarpit_mode :: When type is 'tarpit', selects the TARPIT mode, one of
+            'tarpit' (default, zero-window hold), 'honeypot' (accept then hold),
+            or 'reset'. Ignored for the other types.
+        - Default :: tarpit
 
     - kill :: Use conntrack(8) to drop existing connection tracking entries
             for the banned IP, for both IPv4 and IPv6. When protocols are
@@ -314,22 +343,43 @@ sub new {
 			$self->{options}{kill} = 0;
 		}
 
+		# tarpit and delude are xtables-addons targets, hence not lumped in
+		# with the base drop/reject that plain iptables always provides
+		my %valid_types = ( drop => 1, reject => 1, tarpit => 1, delude => 1 );
+
 		if ( defined( $opts{options}{type} ) && ref( $opts{options}{type} ) ne '' ) {
 			$self->{perror}      = 1;
 			$self->{error}       = 20;
 			$self->{errorString} = 'ref for $opts{options}{type} is "' . ref( $opts{options}{type} ) . '" and not ""';
 			$self->warn;
 		} elsif ( defined( $opts{options}{type} )
-			&& $opts{options}{type} ne 'drop'
-			&& $opts{options}{type} ne 'reject' )
+			&& !$valid_types{ $opts{options}{type} } )
 		{
 			$self->{perror} = 1;
 			$self->{error}  = 20;
 			$self->{errorString}
-				= '$opts{options}{type} is "' . $opts{options}{type} . '" and not "drop" or "reject"';
+				= '$opts{options}{type} is "'
+				. $opts{options}{type}
+				. '" and not one of "drop", "reject", "tarpit", or "delude"';
 			$self->warn;
 		} elsif ( !defined( $opts{options}{type} ) ) {
 			$self->{options}{type} = 'drop';
+		}
+
+		# tarpit has three modes; delude and the plain targets take none. Only
+		# validate it here, _rule_commands decides when it is actually emitted.
+		my %valid_tarpit_modes = ( tarpit => 1, honeypot => 1, reset => 1 );
+		if ( defined( $opts{options}{tarpit_mode} )
+			&& ( ref( $opts{options}{tarpit_mode} ) ne ''
+				|| !$valid_tarpit_modes{ $opts{options}{tarpit_mode} } ) )
+		{
+			$self->{perror} = 1;
+			$self->{error}  = 20;
+			$self->{errorString}
+				= '$opts{options}{tarpit_mode} is "'
+				. ( ref( $opts{options}{tarpit_mode} ) ne '' ? ref( $opts{options}{tarpit_mode} ) : $opts{options}{tarpit_mode} )
+				. '" and not one of "tarpit", "honeypot", or "reset"';
+			$self->warn;
 		}
 
 	} ## end if ( defined( $opts{options} ) )
@@ -351,29 +401,66 @@ sub _set_names {
 	return ( $chain . '_4', $chain . '_6', $chain );
 }
 
-=head2 _rule_commands
+=head2 _needs_notrack
 
-Internal helper. Returns the list of commands that populate the chain
-with the block rules, based on the configured protocols and ports.
+Internal helper. True when the configured type is one of the xtables-addons
+TCP targets (tarpit/delude) that require the matching traffic to be exempted
+from connection tracking. See L</_notrack_commands>.
 
 =cut
 
-sub _rule_commands {
+sub _needs_notrack {
 	my ($self) = @_;
 
-	my ( $set4, $set6, $chain ) = $self->_set_names;
+	my $type = $self->{options}{type};
+	return ( $type eq 'tarpit' || $type eq 'delude' ) ? 1 : 0;
+}
+
+=head2 _rule_specs
+
+Internal helper. Returns the list of per-rule specs the block rules are built
+from, as hashrefs of C<< { fam => \%family, match => $match } >> where
+C<match> is the portion of the rule between C<src> and C<-j> (eg
+C<< ' -p tcp -m multiport --dports 22' >>, or C<''> for match-everything).
+
+Both L</_rule_commands> (the filter table block rules) and
+L</_notrack_commands> (the raw table conntrack exemptions) are generated from
+these specs so the two always match exactly the same traffic.
+
+=cut
+
+sub _rule_specs {
+	my ($self) = @_;
+
+	my ( $set4, $set6 ) = $self->_set_names;
 
 	my @ports    = @{ $self->{ports} };
 	my @protos   = @{ $self->{protocols} };
 	my $port_str = join( ',', @ports );
 
+	my $type = $self->{options}{type};
+
 	# work out the target for each family
 	my $t4 = 'DROP';
 	my $t6 = 'DROP';
-	if ( $self->{options}{type} eq 'reject' ) {
+	if ( $type eq 'reject' ) {
 		$t4 = 'REJECT --reject-with icmp-port-unreachable';
 		$t6 = 'REJECT --reject-with icmp6-port-unreachable';
+	} elsif ( $type eq 'tarpit' ) {
+		# xtables-addons TARPIT; --honeypot/--reset select the alternate modes,
+		# the default --tarpit is left implicit so older builds still accept it
+		my $mode = $self->{options}{tarpit_mode};
+		$t4 = ( defined($mode) && $mode ne 'tarpit' ) ? 'TARPIT --' . $mode : 'TARPIT';
+		$t6 = $t4;
+	} elsif ( $type eq 'delude' ) {
+		$t4 = 'DELUDE';
+		$t6 = 'DELUDE';
 	}
+
+	# TARPIT and DELUDE only handle TCP, so their rules are forced to -p tcp
+	# and any non-tcp protocol/port combination is skipped rather than emitted
+	# with a target the kernel would reject.
+	my $tcp_only = $self->_needs_notrack;
 
 	my @families = (
 		{ cmd => 'iptables',  set => $set4, tgt => $t4, family => 4 },
@@ -386,18 +473,22 @@ sub _rule_commands {
 	# the various names the IPv6 ICMP protocol may go by
 	my %v6_icmp = ( 'ipv6-icmp' => 1, 'icmp6' => 1, 'icmpv6' => 1 );
 
-	my @commands;
+	my @specs;
 	foreach my $fam (@families) {
-		my $base = $fam->{cmd} . ' -A ' . $chain . ' -m set --match-set ' . $fam->{set} . ' src';
-
 		if ( !@protos && !@ports ) {
-			# block everything sourced from the set
-			push( @commands, $base . ' -j ' . $fam->{tgt} );
+			if ($tcp_only) {
+				# tarpit/delude have no all-protocol form; scope to tcp
+				push( @specs, { fam => $fam, match => ' -p tcp' } );
+			} else {
+				# block everything sourced from the set
+				push( @specs, { fam => $fam, match => '' } );
+			}
 		} elsif ( !@protos && @ports ) {
-			# ports require a protocol, default to tcp and udp
-			foreach my $proto ( 'tcp', 'udp' ) {
-				push( @commands,
-					$base . ' -p ' . $proto . ' -m multiport --dports ' . $port_str . ' -j ' . $fam->{tgt} );
+			# ports require a protocol, default to tcp and udp, but tarpit/delude
+			# are tcp only so udp is dropped from that default
+			my @default_protos = $tcp_only ? ('tcp') : ( 'tcp', 'udp' );
+			foreach my $proto (@default_protos) {
+				push( @specs, { fam => $fam, match => ' -p ' . $proto . ' -m multiport --dports ' . $port_str } );
 			}
 		} else {
 			foreach my $proto (@protos) {
@@ -408,18 +499,136 @@ sub _rule_commands {
 					next if ( $v6_icmp{$proto} );
 				}
 
-				my $rule = $base . ' -p ' . $proto;
+				# tarpit/delude can only target tcp, so leave the rest untouched
+				next if ( $tcp_only && $proto ne 'tcp' );
+
+				my $match = ' -p ' . $proto;
 				if ( @ports && $port_ok{$proto} ) {
-					$rule .= ' -m multiport --dports ' . $port_str;
+					$match .= ' -m multiport --dports ' . $port_str;
 				}
-				$rule .= ' -j ' . $fam->{tgt};
-				push( @commands, $rule );
+				push( @specs, { fam => $fam, match => $match } );
 			} ## end foreach my $proto (@protos)
 		} ## end else [ if ( !@protos && !@ports ) ]
 	} ## end foreach my $fam (@families)
 
+	return @specs;
+} ## end sub _rule_specs
+
+=head2 _rule_commands
+
+Internal helper. Returns the list of commands that populate the filter chain
+with the block rules, based on the configured protocols and ports.
+
+=cut
+
+sub _rule_commands {
+	my ($self) = @_;
+
+	my ( undef, undef, $chain ) = $self->_set_names;
+
+	my @commands;
+	foreach my $spec ( $self->_rule_specs ) {
+		my $fam = $spec->{fam};
+		push( @commands,
+			      $fam->{cmd}
+				. ' -A '
+				. $chain
+				. ' -m set --match-set '
+				. $fam->{set} . ' src'
+				. $spec->{match} . ' -j '
+				. $fam->{tgt} );
+	}
+
 	return @commands;
 } ## end sub _rule_commands
+
+=head2 _notrack_commands
+
+Internal helper. Returns the raw table rules that exempt the tarpitted or
+deluded traffic from connection tracking, or an empty list for the plain
+drop/reject types that do not need it.
+
+TARPIT and DELUDE craft their own TCP replies (a zero-window ACK stream and a
+SYN/ACK-then-RST respectively) with no local socket. If conntrack tracks that
+traffic the kernel's own stack also processes it, which both undoes the trick
+and pins an INVALID conntrack entry per attacker packet. Adding a
+C<< -j CT --notrack >> rule in raw/PREROUTING that matches exactly the same
+source set, protocol, and ports as the block rule keeps conntrack out of the
+way. These populate a same-named chain in the C<raw> table (chain names are
+per-table, so it does not collide with the filter chain).
+
+=cut
+
+sub _notrack_commands {
+	my ($self) = @_;
+
+	return () if ( !$self->_needs_notrack );
+
+	my ( undef, undef, $chain ) = $self->_set_names;
+
+	my @commands;
+	foreach my $spec ( $self->_rule_specs ) {
+		my $fam = $spec->{fam};
+		push( @commands,
+			      $fam->{cmd}
+				. ' -t raw -A '
+				. $chain
+				. ' -m set --match-set '
+				. $fam->{set} . ' src'
+				. $spec->{match}
+				. ' -j CT --notrack' );
+	}
+
+	return @commands;
+} ## end sub _notrack_commands
+
+=head2 _raw_setup_commands
+
+Internal helper. Returns the commands that create the raw table chain, fill
+it with the L</_notrack_commands>, and jump to it from raw/PREROUTING. Empty
+unless the type needs notrack.
+
+=cut
+
+sub _raw_setup_commands {
+	my ($self) = @_;
+
+	return () if ( !$self->_needs_notrack );
+
+	my ( undef, undef, $chain ) = $self->_set_names;
+
+	return (
+		'iptables -t raw -N ' . $chain,
+		'ip6tables -t raw -N ' . $chain,
+		$self->_notrack_commands,
+		'iptables -t raw -A PREROUTING -j ' . $chain,
+		'ip6tables -t raw -A PREROUTING -j ' . $chain,
+	);
+} ## end sub _raw_setup_commands
+
+=head2 _raw_teardown_commands
+
+Internal helper. Returns the commands that remove the raw table chain and its
+jump from raw/PREROUTING. Empty unless the type needs notrack.
+
+=cut
+
+sub _raw_teardown_commands {
+	my ($self) = @_;
+
+	return () if ( !$self->_needs_notrack );
+
+	my ( undef, undef, $chain ) = $self->_set_names;
+
+	return (
+		'iptables -t raw -D PREROUTING -j ' . $chain,
+		'ip6tables -t raw -D PREROUTING -j ' . $chain,
+		'iptables -t raw -F ' . $chain,
+		'ip6tables -t raw -F ' . $chain,
+		'iptables -t raw -X ' . $chain,
+		'ip6tables -t raw -X ' . $chain,
+	);
+} ## end sub _raw_teardown_commands
 
 =head2 _kill_commands
 
@@ -520,6 +729,9 @@ sub init {
 	push( @fail_okay_commands, 'ipset destroy ' . $set4 );
 	push( @fail_okay_commands, 'ipset destroy ' . $set6 );
 
+	# stale raw table notrack chain, only for tarpit/delude; empty otherwise
+	push( @fail_okay_commands, $self->_raw_teardown_commands );
+
 	if ( $self->{testing} ) {
 		$self->{frontend_obj}->{test_data}{fail_okay_commands} = \@fail_okay_commands;
 	} else {
@@ -541,6 +753,10 @@ sub init {
 	# jump to the chain from INPUT
 	push( @commands, 'iptables -A INPUT -j ' . $chain );
 	push( @commands, 'ip6tables -A INPUT -j ' . $chain );
+
+	# for tarpit/delude, exempt the matching traffic from conntrack via a raw
+	# table chain; empty for the plain drop/reject types
+	push( @commands, $self->_raw_setup_commands );
 
 	if ( $self->{testing} ) {
 		$self->{frontend_obj}->{test_data}{commands} = \@commands;
@@ -818,6 +1034,11 @@ sub teardown {
 	push( @commands, 'ip6tables -F ' . $chain );
 	push( @commands, 'iptables -X ' . $chain );
 	push( @commands, 'ip6tables -X ' . $chain );
+
+	# remove the raw notrack chain (tarpit/delude only) before destroying the
+	# ipsets, as its rules reference them; empty otherwise
+	push( @commands, $self->_raw_teardown_commands );
+
 	push( @commands, 'ipset destroy ' . $set4 );
 	push( @commands, 'ipset destroy ' . $set6 );
 
@@ -871,9 +1092,10 @@ sub check {
 
 	my ( $set4, $set6, $chain ) = $self->_set_names;
 
-	# reuse the -A commands that populate the chain as -C existence checks,
-	# so every block rule the chain should contain is verified
-	my @rule_checks = $self->_rule_commands;
+	# reuse the -A commands that populate the chains as -C existence checks, so
+	# every block rule (and, for tarpit/delude, every raw notrack rule) the
+	# setup should contain is verified
+	my @rule_checks = ( $self->_rule_commands, $self->_notrack_commands );
 	foreach my $item (@rule_checks) {
 		$item =~ s/ -A / -C /;
 	}
@@ -885,6 +1107,12 @@ sub check {
 		'ip6tables -C INPUT -j ' . $chain,
 		@rule_checks,
 	);
+
+	# the raw table jump only exists for tarpit/delude; empty otherwise
+	if ( $self->_needs_notrack ) {
+		push( @commands, 'iptables -t raw -C PREROUTING -j ' . $chain );
+		push( @commands, 'ip6tables -t raw -C PREROUTING -j ' . $chain );
+	}
 
 	if ( $self->{testing} ) {
 		$self->{frontend_obj}->{test_data} = \@commands;
@@ -1025,7 +1253,9 @@ Backend has already been initiated.
 
 =head2 20, typeInvalid
 
-The value for type is not valid. Should be 'drop' or 'reject'.
+The value for type is not valid. Should be 'drop', 'reject', 'tarpit', or
+'delude'. Also raised when tarpit_mode is set to something other than 'tarpit',
+'honeypot', or 'reset'.
 
 =head2 23, initFailed
 

@@ -1,6 +1,29 @@
 Revision history for Net-Firewall-BlockerHelper
 
 0.1.0   2026-07-13
+        - iptables: add tarpit and delude types alongside drop/reject, backed
+          by the xtables-addons TARPIT/DELUDE targets. Both are TCP only, so
+          they always emit '-p tcp' rules and skip non-tcp protocols/ports. A
+          tarpit_mode option selects the TARPIT mode (tarpit/honeypot/reset).
+          For these types the backend also installs matching '-j CT --notrack'
+          rules in a raw table chain jumped from PREROUTING (set up, checked,
+          and torn down with the filter chain), exempting the crafted TCP
+          replies from conntrack as TARPIT/DELUDE require.
+        - New backends:
+          - shorewall   :: Shorewall dynamic blacklist via shorewall(6)
+            drop/allow.
+          - hosts_deny  :: TCP wrappers, managing a marked region in
+            /etc/hosts.deny while preserving unmanaged content.
+          - file_reload :: generic; render the ban list to a file then run a
+            reload hook. For web servers, DNS RPZ, ipset restore files, etc.
+          - routeros    :: MikroTik RouterOS address-list driven over ssh.
+          - opnsense    :: OPNsense firewall alias via its REST API (curl).
+          - xdp         :: XDP/eBPF packet drops via xdp-filter (xdp-tools).
+          - bgp_rtbh    :: BGP Remote Triggered Black Hole; announces host
+            routes with the RFC 7999 blackhole community. A driver option
+            selects ExaBGP (exabgpcli, default) or gobgp.
+          - routeros_api :: MikroTik RouterOS address-list via the RouterOS 7
+            REST API (LWP), as an alternative to the ssh driven routeros.
         - ipfw: emit family-correct rules. The ipfw 'me' keyword only matches
           IPv4 addresses (me6 exists for IPv6), so the previous 'to me' rules
           never blocked IPv6 traffic; family neutral protocols such as

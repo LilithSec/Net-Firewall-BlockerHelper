@@ -1,0 +1,790 @@
+package Net::Firewall::BlockerHelper::backends::opnsense;
+
+use 5.006;
+use strict;
+use warnings;
+use base 'Error::Helper';
+use Regexp::IPv4 qw($IPv4_re);
+use Regexp::IPv6 qw($IPv6_re);
+
+=head1 NAME
+
+Net::Firewall::BlockerHelper::backends::opnsense - OPNsense firewall alias backend for Net::Firewall::BlockerHelper.
+
+=head1 VERSION
+
+Version 0.1.0
+
+=cut
+
+our $VERSION = '0.1.0';
+
+=head1 SYNOPSIS
+
+    use Net::Firewall::BlockerHelper::backends::opnsense;
+
+    my $backend;
+    eval {
+        $backend = Net::Firewall::BlockerHelper::backends::opnsense->new(
+                name    => 'ssh',
+                options => {
+                        host   => 'fw.example.org',
+                        key    => 'someAPIkey',
+                        secret => 'someAPIsecret',
+                        alias  => 'kur_ssh',
+                        },
+            );
+    };
+    if ($@) {
+        print 'Error: '
+            . $Error::Helper::error
+            . "\nError String: "
+            . $Error::Helper::errorString
+            . "\nError Flag: "
+            . $Error::Helper::errorFlag . "\n";
+    }
+
+    $backend->init;
+
+    $backend->ban(ban => '1.2.3.4');
+    $backend->ban(ban => '4.3.2.1');
+
+    use Data::Dumper;
+    print Dumper($backend->list);
+
+    $backend->unban(ban => '4.3.2.1');
+
+    $backend->teardown;
+
+=head1 DESCRIPTION
+
+This backend blocks IPs by adding them to an OPNsense firewall alias via
+the C<os-firewall> C<alias_util> REST API, talked to via L<curl(1)>.
+
+A single alias holds all of the banned IPs. Both IPv4 and IPv6 addresses
+are added to the same alias as OPNsense host/network aliases are family
+agnostic.
+
+The alias B<must> already exist in OPNsense. It is created in the OPNsense
+web UI (Firewall -> Aliases) and referenced by a firewall rule that does
+the actual blocking. This backend only manages the contents of the alias,
+not the alias itself nor the rule referencing it.
+
+Requires C<curl> to be installed and in the C<PATH> of the process.
+
+=head1 METHODS
+
+=head2 new
+
+Initiates the the object.
+
+    - options :: Backend specific options. See below for further info.
+        - Default :: {}
+
+    - ports :: Not used by this backend but is accepted for parity with
+            Net::Firewall::BlockerHelper.
+        - Default :: []
+
+    - protocols :: Not used by this backend but is accepted for parity with
+            Net::Firewall::BlockerHelper.
+        - Default :: []
+
+    - prefix :: Prefix to use when building the default alias name.
+        - default :: kur
+
+    - name :: Name of this specific instance. This must be specified.
+        - default :: undef
+
+The options hash accepts the following.
+
+    - host :: OPNsense hostname or IP the API is reached at. May include a
+            port, eg 'fw.example.org:8443'. This must be specified and can
+            not be blank.
+        - Default :: undef
+
+    - key :: The OPNsense API key. This must be specified and can not be
+            blank.
+        - Default :: undef
+
+    - secret :: The OPNsense API secret. This must be specified and can not
+            be blank.
+        - Default :: undef
+
+    - alias :: The name of the alias the IPs are added to. The alias must
+            already exist in OPNsense.
+        - Default :: <prefix>_<name>
+
+    - curl_cmd :: The curl binary plus any base arguments.
+        - Default :: curl -s
+
+    - insecure :: If true, '-k' is added to curl so self-signed certs are
+            accepted.
+        - Default :: 0
+
+    - scheme :: The scheme used when building the URL, either 'https' or
+            'http'.
+        - Default :: https
+
+All errors are considered fatal, meaning if new fails it will die.
+
+    my $backend;
+    eval {
+        $backend = Net::Firewall::BlockerHelper::backends::opnsense->new(
+                name    => 'ssh',
+                options => {
+                        host   => 'fw.example.org',
+                        key    => 'someAPIkey',
+                        secret => 'someAPIsecret',
+                        },
+            );
+    };
+    if ($@) {
+        print 'Error: '
+            . $Error::Helper::error
+            . "\nError String: "
+            . $Error::Helper::errorString
+            . "\nError Flag: "
+            . $Error::Helper::errorFlag . "\n";
+    }
+
+=cut
+
+sub new {
+	my ( $blank, %opts ) = @_;
+
+	my $self = {
+		perror        => undef,
+		error         => undef,
+		errorLine     => undef,
+		errorFilename => undef,
+		errorString   => "",
+		errorExtra    => {
+			all_errors_fatal => 1,
+			# all_fatal is what Error::Helper 2.1.0 actually checks; all_errors_fatal
+			# is kept for the name documented in its POD
+			all_fatal        => 1,
+			flags            => {
+				1  => 'notInited',
+				8  => 'optionsNotHash',
+				9  => 'noBanItem',
+				10 => 'banItemNotIP',
+				12 => 'backendInitError',
+				13 => 'banFailed',
+				14 => 'unbanFailed',
+				15 => 'listFailed',
+				16 => 'reInitFailed',
+				17 => 'teardownFailed',
+				18 => 'alreadyInited',
+				24 => 'checkFailed',
+				25 => 'flushFailed',
+				30 => 'hostNotDefined',
+				31 => 'apiKeyNotDefined',
+				32 => 'apiSecretNotDefined',
+			},
+			fatal_flags      => {},
+			perror_not_fatal => 0,
+		},
+		options => {
+			curl_cmd => 'curl -s',
+			insecure => 0,
+			scheme   => 'https',
+		},
+		ports        => [],
+		protocols    => [],
+		testing      => undef,
+		test_data    => undef,
+		prefix       => 'kur',
+		frontend_obj => undef,
+		inited       => 0,
+		banned       => {},
+	};
+	bless $self;
+
+	# make sure prefix is sane if defined
+	if ( defined( $opts{prefix} ) ) {
+		$self->{prefix} = $opts{prefix};
+	}
+
+	if ( defined( $opts{name} ) ) {
+		$self->{name} = $opts{name};
+	}
+
+	# used internally for testing
+	if ( defined( $opts{testing} ) ) {
+		$self->{testing} = $opts{testing};
+	}
+	if ( defined( $opts{frontend_obj} ) ) {
+		$self->{frontend_obj} = $opts{frontend_obj};
+	}
+
+	if ( defined( $opts{options} ) ) {
+		if ( ref( $opts{options} ) ne 'HASH' ) {
+			$self->{perror}      = 1;
+			$self->{error}       = 8;
+			$self->{errorString} = 'ref for options is "' . ref( $opts{options} ) . '" and not HASH';
+			$self->warn;
+		}
+		# merge the passed options over the defaults so unset knobs keep them
+		foreach my $key ( keys( %{ $opts{options} } ) ) {
+			$self->{options}{$key} = $opts{options}{$key};
+		}
+	}
+
+	# fill in the defaults for anything not passed
+	if ( !defined( $self->{options}{curl_cmd} ) || $self->{options}{curl_cmd} eq '' ) {
+		$self->{options}{curl_cmd} = 'curl -s';
+	}
+	if ( !defined( $self->{options}{insecure} ) ) {
+		$self->{options}{insecure} = 0;
+	}
+	if ( !defined( $self->{options}{scheme} ) || $self->{options}{scheme} eq '' ) {
+		$self->{options}{scheme} = 'https';
+	}
+	if ( !defined( $self->{options}{alias} ) || $self->{options}{alias} eq '' ) {
+		$self->{options}{alias} = $self->{prefix} . '_' . ( defined( $self->{name} ) ? $self->{name} : '' );
+	}
+
+	# host, key, and secret are all required to be able to talk to the API
+	if ( !defined( $self->{options}{host} ) || $self->{options}{host} eq '' ) {
+		$self->{perror}      = 1;
+		$self->{error}       = 30;
+		$self->{errorString} = 'host is not defined or is blank';
+		$self->warn;
+	} elsif ( !defined( $self->{options}{key} ) || $self->{options}{key} eq '' ) {
+		$self->{perror}      = 1;
+		$self->{error}       = 31;
+		$self->{errorString} = 'key is not defined or is blank';
+		$self->warn;
+	} elsif ( !defined( $self->{options}{secret} ) || $self->{options}{secret} eq '' ) {
+		$self->{perror}      = 1;
+		$self->{error}       = 32;
+		$self->{errorString} = 'secret is not defined or is blank';
+		$self->warn;
+	}
+
+	return $self;
+} ## end sub new
+
+=head2 _curl
+
+Internal helper. Builds and returns the curl command string used to talk
+to the OPNsense API.
+
+    my $command = $self->_curl( 'alias_util/list/' . $alias );
+    my $command = $self->_curl( 'alias_util/add/' . $alias, '{"address":"1.2.3.4"}' );
+
+The first argument is the method path appended to
+C<< <scheme>://<host>/api/firewall/ >>. The second argument, if defined,
+is passed as the JSON body via '-d'.
+
+=cut
+
+sub _curl {
+	my ( $self, $method_path, $data ) = @_;
+
+	my $command = $self->{options}{curl_cmd};
+
+	if ( $self->{options}{insecure} ) {
+		$command .= ' -k';
+	}
+
+	$command
+		.= " -u '"
+		. $self->{options}{key} . ':'
+		. $self->{options}{secret}
+		. "' -H 'Content-Type: application/json'";
+
+	if ( defined($data) ) {
+		$command .= " -d '" . $data . "'";
+	}
+
+	$command
+		.= " '"
+		. $self->{options}{scheme}
+		. '://'
+		. $self->{options}{host}
+		. '/api/firewall/'
+		. $method_path . "'";
+
+	return $command;
+} ## end sub _curl
+
+=head2 init
+
+Initiates the backend. This verifies the alias is reachable by listing
+it via the API.
+
+No arguments are taken.
+
+May called a second time, it will error.
+
+    $backend->init;
+
+=cut
+
+sub init {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( $self->{inited} ) {
+		$self->{error}       = 18;
+		$self->{errorString} = 'backend has already been inited';
+		$self->warn;
+	}
+
+	my $command = $self->_curl( 'alias_util/list/' . $self->{options}{alias} );
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = [$command];
+	} else {
+		my $output = `$command 2>&1`;
+		if ( $? != 0 ) {
+			$self->{error}       = 12;
+			$self->{errorString} = 'init failed... command "' . $command . '" resulted in... ' . $output;
+			$self->warn;
+		}
+	}
+
+	$self->{inited} = 1;
+} ## end sub init
+
+=head2 ban
+
+Bans the IP by adding it to the alias.
+
+    $backend->ban(ban => $ip);
+
+=cut
+
+sub ban {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( !$self->{inited} ) {
+		$self->{error}       = 1;
+		$self->{errorString} = 'backend has not been inited';
+		$self->warn;
+		return;
+	}
+
+	if ( !defined( $opts{ban} ) ) {
+		$self->{error}       = 9;
+		$self->{errorString} = 'Nothing specified for the value ban';
+		$self->warn;
+		return;
+	} elsif ( ref( $opts{ban} ) ne '' ) {
+		$self->{error}       = 10;
+		$self->{errorString} = 'Bad ref type for ban... ref is "' . ref( $opts{ban} ) . '"';
+		$self->warn;
+		return;
+	} elsif ( $opts{ban} !~ /\A$IPv4_re\z/
+		&& $opts{ban} !~ /\A$IPv6_re\z/ )
+	{
+		$self->{error}       = 10;
+		$self->{errorString} = 'ban item,"' . $opts{ban} . '", does not appear to be a IPv4 or IPv6 IP';
+		$self->warn;
+		return;
+	}
+
+	# lowercase so the same IPv6 IP in differing cases can't result in duplicate entries
+	$opts{ban} = lc( $opts{ban} );
+
+	if ( $self->{banned}{ $opts{ban} } ) {
+		if ( $self->{testing} ) {
+			$self->{frontend_obj}->{test_data} = 'already banned';
+		}
+		return;
+	}
+
+	my $command = $self->_curl( 'alias_util/add/' . $self->{options}{alias}, '{"address":"' . $opts{ban} . '"}' );
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = [$command];
+	} else {
+		my $output = `$command 2>&1`;
+		if ( $? != 0 ) {
+			$self->{error}       = 13;
+			$self->{errorString} = 'ban failed... command "' . $command . '" resulted in... ' . $output;
+			$self->warn;
+		}
+	}
+
+	$self->{banned}{ $opts{ban} } = 1;
+} ## end sub ban
+
+=head2 unban
+
+Unbans the an IP by removing it from the alias.
+
+    $backend->unban(ban => $ip);
+
+=cut
+
+sub unban {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( !$self->{inited} ) {
+		$self->{error}       = 1;
+		$self->{errorString} = 'backend has not been inited';
+		$self->warn;
+		return;
+	}
+
+	if ( !defined( $opts{ban} ) ) {
+		$self->{error}       = 9;
+		$self->{errorString} = 'Nothing specified for the value ban';
+		$self->warn;
+		return;
+	} elsif ( ref( $opts{ban} ) ne '' ) {
+		$self->{error}       = 10;
+		$self->{errorString} = 'Bad ref type for ban... ref is "' . ref( $opts{ban} ) . '"';
+		$self->warn;
+		return;
+	} elsif ( $opts{ban} !~ /\A$IPv4_re\z/
+		&& $opts{ban} !~ /\A$IPv6_re\z/ )
+	{
+		$self->{error}       = 10;
+		$self->{errorString} = 'ban item,"' . $opts{ban} . '", does not appear to be a IPv4 or IPv6 IP';
+		$self->warn;
+		return;
+	}
+
+	# lowercase so the same IPv6 IP in differing cases can't result in duplicate entries
+	$opts{ban} = lc( $opts{ban} );
+
+	if ( !$self->{banned}{ $opts{ban} } ) {
+		if ( $self->{testing} ) {
+			$self->{frontend_obj}->{test_data} = 'not banned';
+		}
+		return;
+	}
+
+	my $command = $self->_curl( 'alias_util/delete/' . $self->{options}{alias}, '{"address":"' . $opts{ban} . '"}' );
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = [$command];
+	} else {
+		my $output = `$command 2>&1`;
+		if ( $? != 0 ) {
+			$self->{error}       = 14;
+			$self->{errorString} = 'unban failed... command "' . $command . '" resulted in... ' . $output;
+			$self->warn;
+		}
+	}
+
+	delete( $self->{banned}{ $opts{ban} } );
+} ## end sub unban
+
+=head2 list
+
+List banned IPs.
+
+    my @banned = $backend->list;
+
+=cut
+
+sub list {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = 'list';
+	}
+
+	return keys( %{ $self->{banned} } );
+}
+
+=head2 re_init
+
+Tells the backend to re-init it's self.
+
+This will call teardown and init again. After that it will
+re-add all previously added bans.
+
+    $backend->re_init;
+
+=cut
+
+sub re_init {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( !$self->{inited} ) {
+		$self->{error}       = 1;
+		$self->{errorString} = 'backend has not been inited';
+		$self->warn;
+		return;
+	}
+
+	# teardown is best effort here as a partially or fully wiped setup is
+	# exactly what re_init needs to recover from; init cleans up any remnants
+	{
+		local $@;
+		eval { $self->teardown; };
+	}
+	$self->init;
+
+	my @to_re_ban = keys( %{ $self->{banned} } );
+
+	my @re_init_test_data;
+	foreach my $item (@to_re_ban) {
+		my $command = $self->_curl( 'alias_util/add/' . $self->{options}{alias}, '{"address":"' . $item . '"}' );
+
+		if ( $self->{testing} ) {
+			push( @re_init_test_data, $command );
+		} else {
+			my $output = `$command 2>&1`;
+			if ( $? != 0 ) {
+				$self->{error}       = 13;
+				$self->{errorString} = 'ban failed... command "' . $command . '" resulted in... ' . $output;
+				$self->warn;
+			}
+		}
+	} ## end foreach my $item (@to_re_ban)
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = \@re_init_test_data;
+	}
+
+	$self->{inited} = 1;
+} ## end sub re_init
+
+=head2 teardown
+
+Tears down the setup for the backend.
+
+This flushes the alias, removing all of the banned IPs from it. The alias
+itself and the rule referencing it are left in place.
+
+    $backend->teardown;
+
+=cut
+
+sub teardown {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	$self->{inited} = 0;
+
+	my $command = $self->_curl( 'alias_util/flush/' . $self->{options}{alias}, '{}' );
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = [$command];
+	} else {
+		my $output = `$command 2>&1`;
+		if ( $? != 0 ) {
+			$self->{error}       = 17;
+			$self->{errorString} = 'teardown failed... command "' . $command . '" resulted in... ' . $output;
+			$self->warn;
+		}
+	}
+} ## end sub teardown
+
+=head2 stop
+
+Alias for L</teardown>, provided for parity with the fail2ban C<actionstop>
+concept.
+
+    $backend->stop;
+
+=cut
+
+sub stop {
+	my ( $self, %opts ) = @_;
+
+	return $self->teardown(%opts);
+}
+
+=head2 check
+
+Verifies the alias is still reachable by listing it via the API. A zero
+curl exit code is treated as healthy. This is the equivalent of fail2ban's
+C<actioncheck>.
+
+    if ( !$backend->check ) {
+        $backend->re_init;
+    }
+
+=cut
+
+sub check {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	my $command = $self->_curl( 'alias_util/list/' . $self->{options}{alias} );
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = [$command];
+		return 1;
+	}
+
+	my $output = `$command 2>&1`;
+	return $? == 0 ? 1 : 0;
+} ## end sub check
+
+=head2 flush
+
+Removes all currently banned IPs at once by flushing the alias, leaving the
+alias and the rule referencing it in place. This is the equivalent of
+fail2ban's C<actionflush>.
+
+    $backend->flush;
+
+=cut
+
+sub flush {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( !$self->{inited} ) {
+		$self->{error}       = 1;
+		$self->{errorString} = 'backend has not been inited';
+		$self->warn;
+		return;
+	}
+
+	my $command = $self->_curl( 'alias_util/flush/' . $self->{options}{alias}, '{}' );
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = [$command];
+	} else {
+		my $output = `$command 2>&1`;
+		if ( $? != 0 ) {
+			$self->{error}       = 25;
+			$self->{errorString} = 'flush failed... command "' . $command . '" resulted in... ' . $output;
+			$self->warn;
+		}
+	}
+
+	$self->{banned} = {};
+} ## end sub flush
+
+=head1 ERROR CODES / FLAGS
+
+Error handling is provided by L<Error::Helper>. All
+errors are considered fatal.
+
+=head2 1, notInited
+
+Backend has not been initted yet.
+
+=head2 8, optionsNotHash
+
+The item passed to new for options is not a hash.
+
+=head2 9, noBanItem
+
+No IP specified to ban.
+
+=head2 10, banItemNotIP
+
+The item to ban is not an IP. Either wrong ref type or regexp
+test using L<Regexp::IPv4> and L<Regexp::IPv6> failed.
+
+=head2 12, backendInitError
+
+Failed to init the backend.
+
+=head2 13, banFailed
+
+Failed to ban the item.
+
+=head2 14, unbanFailed
+
+Failed to unban the item.
+
+=head2 15, listFailed
+
+Failed get a list of bans.
+
+=head2 16, reInitFailed
+
+Failed to re_init the backend.
+
+=head2 17, teardownFailed
+
+Failed to teardown the backend.
+
+=head2 18, alreadyInited
+
+Backend has already been initiated.
+
+=head2 24, checkFailed
+
+The backend check raised an error.
+
+=head2 25, flushFailed
+
+Failed to flush the bans.
+
+=head2 30, hostNotDefined
+
+The host option is not defined or is blank.
+
+=head2 31, apiKeyNotDefined
+
+The key option is not defined or is blank.
+
+=head2 32, apiSecretNotDefined
+
+The secret option is not defined or is blank.
+
+=head1 AUTHOR
+
+Zane C. Bowers-Hadley, C<< <vvelox at vvelox.ent> >>
+
+=head1 BUGS
+
+Please report any bugs or feature requests to C<bug-net-firewall-blockerhelper at rt.cpan.org>, or through
+the web interface at L<https://rt.cpan.org/NoAuth/ReportBug.html?Queue=Net-Firewall-BlockerHelper>.  I will be notified, and then you'll
+automatically be notified of progress on your bug as I make changes.
+
+
+
+
+=head1 SUPPORT
+
+You can find documentation for this module with the perldoc command.
+
+    perldoc Net::Firewall::BlockerHelper
+
+
+You can also look for information at:
+
+=over 4
+
+=item * RT: CPAN's request tracker (report bugs here)
+
+L<https://rt.cpan.org/NoAuth/Bugs.html?Dist=Net-Firewall-BlockerHelper>
+
+=item * Search CPAN
+
+L<https://metacpan.org/release/Net-Firewall-BlockerHelper>
+
+=back
+
+
+=head1 ACKNOWLEDGEMENTS
+
+
+=head1 LICENSE AND COPYRIGHT
+
+This software is Copyright (c) 2023 by Zane C. Bowers-Hadley.
+
+This is free software, licensed under:
+
+  The GNU Lesser General Public License, Version 2.1, February 1999
+
+
+=cut
+
+1;    # End of Net::Firewall::BlockerHelper
