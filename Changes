@@ -24,6 +24,11 @@ Revision history for Net-Firewall-BlockerHelper
             selects ExaBGP (exabgpcli, default) or gobgp.
           - routeros_api :: MikroTik RouterOS address-list via the RouterOS 7
             REST API (LWP), as an alternative to the ssh driven routeros.
+          - panos       :: Palo Alto Networks PAN-OS; registers IPs to a tag
+            via the User-ID XML API for a Dynamic Address Group to match (no
+            commit needed).
+          - fortigate   :: Fortinet FortiGate; creates firewall address
+            objects and adds them to an address group via the FortiOS REST API.
         - ipfw: emit family-correct rules. The ipfw 'me' keyword only matches
           IPv4 addresses (me6 exists for IPv6), so the previous 'to me' rules
           never blocked IPv6 traffic; family neutral protocols such as

@@ -20,7 +20,9 @@ The following remote/API backends are available. These use LWP::UserAgent,
 which is only loaded if they are used.
 
 - cloudflare
+- fortigate (Fortinet FortiGate address group via the FortiOS REST API)
 - netscaler
+- panos (Palo Alto Networks PAN-OS dynamic address group via the User-ID XML API)
 - routeros_api (MikroTik RouterOS address-list via the RouterOS 7 REST API)
 
 The following other remote backends are available.

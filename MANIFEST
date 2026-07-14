@@ -5,6 +5,7 @@ lib/Net/Firewall/BlockerHelper/backends/cloudflare.pm
 lib/Net/Firewall/BlockerHelper/backends/dummy.pm
 lib/Net/Firewall/BlockerHelper/backends/file_reload.pm
 lib/Net/Firewall/BlockerHelper/backends/firewalld.pm
+lib/Net/Firewall/BlockerHelper/backends/fortigate.pm
 lib/Net/Firewall/BlockerHelper/backends/hosts_deny.pm
 lib/Net/Firewall/BlockerHelper/backends/ipfw.pm
 lib/Net/Firewall/BlockerHelper/backends/iptables.pm
@@ -13,6 +14,7 @@ lib/Net/Firewall/BlockerHelper/backends/nftables.pm
 lib/Net/Firewall/BlockerHelper/backends/npf.pm
 lib/Net/Firewall/BlockerHelper/backends/nsupdate.pm
 lib/Net/Firewall/BlockerHelper/backends/opnsense.pm
+lib/Net/Firewall/BlockerHelper/backends/panos.pm
 lib/Net/Firewall/BlockerHelper/backends/pf.pm
 lib/Net/Firewall/BlockerHelper/backends/route.pm
 lib/Net/Firewall/BlockerHelper/backends/routeros.pm
@@ -40,6 +42,7 @@ t/dummy.t
 t/error_flags.t
 t/file_reload.t
 t/firewalld.t
+t/fortigate.t
 t/hosts_deny.t
 t/ipfw.t
 t/ipfw_family.t
@@ -54,6 +57,7 @@ t/nftables.t
 t/npf.t
 t/nsupdate.t
 t/opnsense.t
+t/panos.t
 t/pf.t
 t/ports_proto.t
 t/route.t
