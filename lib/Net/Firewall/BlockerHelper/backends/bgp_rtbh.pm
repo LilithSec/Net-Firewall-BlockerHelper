@@ -68,14 +68,25 @@ Requires C<exabgpcli> in the C<PATH> and a running, configured C<exabgp>.
 
 The options hash accepts the following.
 
-    - driver :: Which BGP daemon to drive, 'exabgp' or 'gobgp'.
+    - driver :: Which BGP daemon to drive, 'exabgp', 'gobgp', or 'frr'. The
+            frr driver injects a blackhole static route via vtysh (which a
+            redistribute-static route-map on the router tags with the blackhole
+            community for BGP); it does not use next_hop/community directly.
         - Default :: exabgp
+
+    - announce_type :: 'rtbh' (announce a blackholed host route) or 'flowspec'
+            (announce a FlowSpec rule discarding traffic from the source IP).
+            flowspec is supported by the exabgp and gobgp drivers only.
+        - Default :: rtbh
 
     - exabgpcli_cmd :: Path to the exabgpcli binary (driver 'exabgp').
         - Default :: exabgpcli
 
     - gobgp_cmd :: Path to the gobgp binary (driver 'gobgp').
         - Default :: gobgp
+
+    - vtysh_cmd :: Path to the vtysh binary (driver 'frr').
+        - Default :: vtysh
 
     - community :: BGP community attached to every announced route. The
             default is the RFC 7999 well-known BLACKHOLE community.
@@ -130,6 +141,7 @@ sub new {
 				17 => 'teardownFailed',
 				18 => 'alreadyInited',
 				20 => 'driverInvalid',
+				21 => 'announceTypeInvalid',
 				24 => 'checkFailed',
 				25 => 'flushFailed',
 			},
@@ -173,18 +185,34 @@ sub new {
 
 	# defaults
 	$self->{options}{driver}        = 'exabgp'    if ( !defined( $self->{options}{driver} ) );
+	$self->{options}{announce_type} = 'rtbh'      if ( !defined( $self->{options}{announce_type} ) );
 	$self->{options}{exabgpcli_cmd} = 'exabgpcli' if ( !defined( $self->{options}{exabgpcli_cmd} ) );
 	$self->{options}{gobgp_cmd}     = 'gobgp'     if ( !defined( $self->{options}{gobgp_cmd} ) );
+	$self->{options}{vtysh_cmd}     = 'vtysh'     if ( !defined( $self->{options}{vtysh_cmd} ) );
 	$self->{options}{community}     = '65535:666' if ( !defined( $self->{options}{community} ) );
 	$self->{options}{next_hop}      = '192.0.2.1' if ( !defined( $self->{options}{next_hop} ) );
 	$self->{options}{next_hop6}     = '100::1'    if ( !defined( $self->{options}{next_hop6} ) );
 	$self->{options}{mask4}         = 32          if ( !defined( $self->{options}{mask4} ) );
 	$self->{options}{mask6}         = 128         if ( !defined( $self->{options}{mask6} ) );
 
-	if ( $self->{options}{driver} ne 'exabgp' && $self->{options}{driver} ne 'gobgp' ) {
+	my %valid_drivers = ( exabgp => 1, gobgp => 1, frr => 1 );
+	if ( !$valid_drivers{ $self->{options}{driver} } ) {
 		$self->{perror}      = 1;
 		$self->{error}       = 20;
-		$self->{errorString} = 'driver is "' . $self->{options}{driver} . '" and not "exabgp" or "gobgp"';
+		$self->{errorString} = 'driver is "' . $self->{options}{driver} . '" and not "exabgp", "gobgp", or "frr"';
+		$self->warn;
+	}
+
+	if ( $self->{options}{announce_type} ne 'rtbh' && $self->{options}{announce_type} ne 'flowspec' ) {
+		$self->{perror}      = 1;
+		$self->{error}       = 21;
+		$self->{errorString} = 'announce_type is "' . $self->{options}{announce_type} . '" and not "rtbh" or "flowspec"';
+		$self->warn;
+	} elsif ( $self->{options}{announce_type} eq 'flowspec' && $self->{options}{driver} eq 'frr' ) {
+		# frr's vtysh driver only injects blackhole routes, not flowspec rules
+		$self->{perror}      = 1;
+		$self->{error}       = 21;
+		$self->{errorString} = 'announce_type flowspec is not supported by the frr driver';
 		$self->warn;
 	}
 
@@ -207,13 +235,37 @@ sub _route_command {
 	my $mask  = $is_v4 ? $self->{options}{mask4}    : $self->{options}{mask6};
 	my $nh    = $is_v4 ? $self->{options}{next_hop} : $self->{options}{next_hop6};
 	my $extra = ( defined( $self->{options}{extra} ) && $self->{options}{extra} ne '' ) ? $self->{options}{extra} : '';
+	my $prefix     = $ip . '/' . $mask;
+	my $is_flowspec = ( $self->{options}{announce_type} eq 'flowspec' ) ? 1 : 0;
+
+	if ( $self->{options}{driver} eq 'frr' ) {
+		# frr injects a blackhole static route via vtysh; a redistribute-static
+		# route-map on the router tags it with the blackhole community for BGP
+		my $keyword = $is_v4 ? 'ip route' : 'ipv6 route';
+		my $line = ( $verb eq 'announce' ? '' : 'no ' ) . $keyword . ' ' . $prefix . ' blackhole';
+		return $self->{options}{vtysh_cmd} . " -c 'configure terminal' -c '" . $line . "'";
+	}
 
 	if ( $self->{options}{driver} eq 'gobgp' ) {
+		my $op = ( $verb eq 'announce' ) ? 'add' : 'del';
+
+		if ($is_flowspec) {
+			# gobgp global rib add|del -a ipv4-flowspec match source <prefix> then discard
+			my $afi = $is_v4 ? 'ipv4-flowspec' : 'ipv6-flowspec';
+			return
+				  $self->{options}{gobgp_cmd}
+				. ' global rib '
+				. $op
+				. ' -a '
+				. $afi
+				. ' match source '
+				. $prefix
+				. ' then discard';
+		} ## end if ($is_flowspec)
+
 		# gobgp global rib add|del <prefix> [nexthop ..] [community ..] -a <afi>
 		my $afi = $is_v4 ? 'ipv4' : 'ipv6';
-		my $op  = ( $verb eq 'announce' ) ? 'add' : 'del';
-
-		my $cmd = $self->{options}{gobgp_cmd} . ' global rib ' . $op . ' ' . $ip . '/' . $mask;
+		my $cmd = $self->{options}{gobgp_cmd} . ' global rib ' . $op . ' ' . $prefix;
 
 		# a withdrawal matches on prefix alone; attributes are only needed to add
 		if ( $op eq 'add' ) {
@@ -225,12 +277,22 @@ sub _route_command {
 		return $cmd;
 	} ## end if ( $self->{options}{driver...})
 
-	# exabgp: exabgpcli 'announce|withdraw route <prefix> next-hop .. community [..]'
+	# exabgp driver
+	if ($is_flowspec) {
+		# exabgpcli 'announce|withdraw flow route { match { source <prefix>; } then { discard; } }'
+		return
+			  $self->{options}{exabgpcli_cmd} . ' '
+			. $verb
+			. ' flow route { match { source '
+			. $prefix
+			. '; } then { discard; } }';
+	} ## end if ($is_flowspec)
+
+	# exabgp rtbh: exabgpcli 'announce|withdraw route <prefix> next-hop .. community [..]'
 	my $route
 		= $verb
 		. ' route '
-		. $ip . '/'
-		. $mask
+		. $prefix
 		. ' next-hop '
 		. $nh
 		. ' community [' . $self->{options}{community} . ']';
@@ -249,6 +311,9 @@ confirm the BGP daemon is reachable.
 sub _check_command {
 	my ($self) = @_;
 
+	if ( $self->{options}{driver} eq 'frr' ) {
+		return $self->{options}{vtysh_cmd} . " -c 'show ip bgp summary'";
+	}
 	if ( $self->{options}{driver} eq 'gobgp' ) {
 		return $self->{options}{gobgp_cmd} . ' neighbor';
 	}
@@ -641,7 +706,12 @@ Backend has already been initiated.
 
 =head2 20, driverInvalid
 
-The driver option is not one of 'exabgp' or 'gobgp'.
+The driver option is not one of 'exabgp', 'gobgp', or 'frr'.
+
+=head2 21, announceTypeInvalid
+
+The announce_type is not 'rtbh' or 'flowspec', or flowspec was requested with
+the frr driver, which does not support it.
 
 =head2 24, checkFailed
 

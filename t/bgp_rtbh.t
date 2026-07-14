@@ -120,4 +120,56 @@ BEGIN {
 	);
 }
 
+# frr driver injects blackhole static routes via vtysh
+{
+	my $fw = Net::Firewall::BlockerHelper->new(
+		backend => 'bgp_rtbh', name => 'rtbh', testing => 1, options => { driver => 'frr' },
+	);
+	$fw->init_backend;
+	$fw->ban( ban => '1.2.3.4' );
+	is( $fw->{test_data}, "vtysh -c 'configure terminal' -c 'ip route 1.2.3.4/32 blackhole'",
+		'frr ban adds an IPv4 blackhole route' );
+	$fw->ban( ban => 'dead::1' );
+	is( $fw->{test_data}, "vtysh -c 'configure terminal' -c 'ipv6 route dead::1/128 blackhole'",
+		'frr ban adds an IPv6 blackhole route' );
+	$fw->unban( ban => '1.2.3.4' );
+	is( $fw->{test_data}, "vtysh -c 'configure terminal' -c 'no ip route 1.2.3.4/32 blackhole'",
+		'frr unban removes the route' );
+}
+
+# flowspec announce type (exabgp and gobgp)
+{
+	my $fw = Net::Firewall::BlockerHelper->new(
+		backend => 'bgp_rtbh', name => 'rtbh', testing => 1,
+		options => { driver => 'exabgp', announce_type => 'flowspec' },
+	);
+	$fw->init_backend;
+	$fw->ban( ban => '1.2.3.4' );
+	is( $fw->{test_data}, 'exabgpcli announce flow route { match { source 1.2.3.4/32; } then { discard; } }',
+		'exabgp flowspec announces a discard flow' );
+
+	my $g = Net::Firewall::BlockerHelper->new(
+		backend => 'bgp_rtbh', name => 'rtbh', testing => 1,
+		options => { driver => 'gobgp', announce_type => 'flowspec' },
+	);
+	$g->init_backend;
+	$g->ban( ban => 'dead::1' );
+	is( $g->{test_data}, 'gobgp global rib add -a ipv6-flowspec match source dead::1/128 then discard',
+		'gobgp flowspec uses the ipv6-flowspec afi' );
+}
+
+# flowspec is not allowed with the frr driver
+{
+	my $died = 0;
+	eval {
+		my $fw = Net::Firewall::BlockerHelper->new(
+			backend => 'bgp_rtbh', name => 'rtbh', testing => 1,
+			options => { driver => 'frr', announce_type => 'flowspec' },
+		);
+		$fw->init_backend;
+	};
+	$died = 1 if ($@);
+	ok( $died, 'frr + flowspec is fatal' );
+}
+
 done_testing();

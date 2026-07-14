@@ -32,6 +32,29 @@ Revision history for Net-Firewall-BlockerHelper
             teardown are internal only as reports can not be withdrawn.
           - fortigate   :: Fortinet FortiGate; creates firewall address
             objects and adds them to an address group via the FortiOS REST API.
+          - fastly      :: Fastly Edge ACL entries via the Fastly API.
+          - f5_bigip    :: F5 BIG-IP firewall address-list, rendered from state
+            via iControl REST.
+          - pfsense     :: pfSense firewall alias via the pfSense-API package.
+          - vyos        :: VyOS firewall address-group via the HTTP API.
+          - cisco_fmc   :: Cisco Firepower (FMC) network group literals,
+            rendered from state via the FMC REST API.
+          - checkpoint  :: Check Point host object added to a group via the
+            Management API (login/publish).
+          - juniper_srx :: Juniper SRX global address-book + address-set via
+            the Junos REST /rpc API, with commit.
+          - akamai      :: Akamai Network Lists v2 API, EdgeGrid authenticated.
+          - aws_wafv2   :: AWS WAFv2 IP sets (v4 and v6) via the aws CLI, using
+            get-ip-set for the lock token then update-ip-set.
+          - cloud_armor :: GCP Cloud Armor rule source ranges via gcloud,
+            rendered from state.
+          - azure       :: Azure NSG deny rule source prefixes via the az CLI,
+            rendered from state.
+          - dns_rpz     :: DNS Response Policy Zone rpz-client-ip/rpz-ip
+            triggers via nsupdate (IPv4 and IPv6).
+        - bgp_rtbh: gains an frr driver (blackhole route via vtysh) and a
+          flowspec announce_type (a FlowSpec discard rule) for the exabgp and
+          gobgp drivers, alongside the existing rtbh announcements.
         - ipfw: emit family-correct rules. The ipfw 'me' keyword only matches
           IPv4 addresses (me6 exists for IPv6), so the previous 'to me' rules
           never blocked IPv6 traffic; family neutral protocols such as

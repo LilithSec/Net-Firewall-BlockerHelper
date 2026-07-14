@@ -20,16 +20,32 @@ The following remote/API backends are available. These use LWP::UserAgent,
 which is only loaded if they are used.
 
 - abuseipdb (report banned IPs to AbuseIPDB; reporting only, blocks nothing itself)
+- akamai (Akamai Network Lists via the v2 API, EdgeGrid authenticated)
+- checkpoint (Check Point host object in a group via the Management API)
+- cisco_fmc (Cisco Firepower network group via the FMC REST API)
 - cloudflare
+- f5_bigip (F5 BIG-IP firewall address-list via iControl REST)
+- fastly (Fastly Edge ACL entries via the Fastly API)
 - fortigate (Fortinet FortiGate address group via the FortiOS REST API)
+- juniper_srx (Juniper SRX global address-book via the Junos REST API)
 - netscaler
 - panos (Palo Alto Networks PAN-OS dynamic address group via the User-ID XML API)
+- pfsense (pfSense firewall alias via the pfSense-API package)
 - routeros_api (MikroTik RouterOS address-list via the RouterOS 7 REST API)
+- vyos (VyOS firewall address-group via the HTTP API)
+
+The following cloud backends are available. These drive the provider's CLI.
+
+- aws_wafv2 (AWS WAFv2 IP sets via the aws CLI)
+- azure (Azure NSG deny rule source prefixes via the az CLI)
+- cloud_armor (GCP Cloud Armor rule source ranges via the gcloud CLI)
 
 The following other remote backends are available.
 
-- bgp_rtbh (BGP Remote Triggered Black Hole; announces /32 or /128 routes
-  with the RFC 7999 blackhole community, via ExaBGP's exabgpcli or gobgp)
+- bgp_rtbh (BGP Remote Triggered Black Hole; announces /32 or /128 routes with
+  the RFC 7999 blackhole community, or a FlowSpec discard rule, via ExaBGP,
+  gobgp, or FRR/vtysh)
+- dns_rpz (DNS Response Policy Zone rpz-client-ip/rpz-ip triggers via nsupdate)
 - nsupdate (DNS based blocklist via BIND dynamic updates)
 - opnsense (firewall alias via the OPNsense REST API, driven with curl)
 - routeros (MikroTik RouterOS address-list, driven over ssh)
