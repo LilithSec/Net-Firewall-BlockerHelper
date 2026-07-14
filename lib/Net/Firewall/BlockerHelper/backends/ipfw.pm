@@ -13,11 +13,11 @@ Net::Firewall::BlockerHelper::backends::ipfw - IPFW backend for Net::Firewall::B
 
 =head1 VERSION
 
-Version 0.0.1
+Version 0.1.0
 
 =cut
 
-our $VERSION = '0.0.1';
+our $VERSION = '0.1.0';
 
 =head1 SYNOPSIS
 
@@ -92,10 +92,17 @@ Initiates the the object.
             duplicates are removed.
         - Default :: []
 
-    - protocols :: A array of protocols to block. By default will block all. This
-            is checked against /etc/protocols via the function getprotobyname. Duplicates
-            will be discarded.
-        - Default :: ['ip']
+    - protocols :: A array of protocols to block. This is checked against
+            /etc/protocols via the function getprotobyname. Duplicates will be
+            discarded. If no protocols are given, all IPv4 and IPv6 traffic is
+            blocked ('ip4' and 'ip6'), unless ports are given, in which case it
+            defaults to tcp and udp. Ports are only attached to port-capable
+            protocols (tcp/udp/sctp); other protocols are blocked without a
+            port. As the ipfw 'me' keyword only matches IPv4 addresses and
+            'me6' only IPv6 ones, family neutral protocols such as tcp/udp
+            get one rule per family while family specific ones such as icmp or
+            ip6 get a single rule for their family.
+        - Default :: ['ip4','ip6'], or ['tcp','udp'] when ports are given
 
     - prefix :: Prefix to use. Must match the regex /^[a-zA-Z0-9]+$/
         - default :: kur
@@ -110,19 +117,29 @@ The options hash accepts the following.
             when init is called.
         - Default :: 150
 
-    - type :: The drop method to use. Should either be 'deny',
-            'unreach', or 'unreach6'. See ipfw(8) for more info.
+    - type :: The drop method to use. 'deny' silently drops. 'unreach' and
+            'unreach6' both mean reject, and are treated as synonyms: the
+            family of each generated rule decides whether an IPv4 unreach or
+            an IPv6 unreach6 is sent, using the unreach and unreach6 codes
+            below. See ipfw(8) for more info.
         - Default :: deny
 
-    - unreach :: The if using unreach, the unreach type to use.
-            See ipfw(8) for more info.
+    - unreach :: The IPv4 unreach code to use when type is a reject. Applied
+            to IPv4 protocols. See ipfw(8) for more info.
         - Default :: port
 
-    - unreach6 :: The if using unreach, the unreach type to use.
-            See ipfw(8) for more info.
+    - unreach6 :: The IPv6 unreach6 code to use when type is a reject. Applied
+            to IPv6 protocols. See ipfw(8) for more info.
         - Default :: port
 
-    - kill :: Use tcpdrop to kill TCP connections for that IP.
+    - kill :: Use tcpdrop to kill TCP connections for that IP. Handles both
+            IPv4 and IPv6, picking the sockstat family and parsing per the
+            family of the banned IP. TCP only, as FreeBSD has no tcpdrop
+            equivalent for UDP; since the generated rules are stateless, UDP
+            from the banned IP is blocked immediately regardless, so there is
+            no lingering flow state to clear. If protocols are configured and
+            tcp is not among them, nothing is killed, so blocking only udp
+            never drops TCP connections.
         - Default :: 0
 
 All errors are considered fatal, meaning if new fails it will die.
@@ -158,6 +175,9 @@ sub new {
 		errorString   => "",
 		errorExtra    => {
 			all_errors_fatal => 1,
+			# all_fatal is what Error::Helper 2.1.0 actually checks; all_errors_fatal
+			# is kept for the name documented in its POD
+			all_fatal        => 1,
 			flags            => {
 				1  => 'notInited',
 				2  => 'invalidPortSpecified',
@@ -182,6 +202,9 @@ sub new {
 				21 => 'unreachInvalid',
 				22 => 'unreach6Invalid',
 				23 => 'initFailed',
+				26 => 'nameTooLong',
+				24 => 'checkFailed',
+				25 => 'flushFailed',
 			},
 			fatal_flags      => {},
 			perror_not_fatal => 0,
@@ -198,7 +221,6 @@ sub new {
 		testing      => undef,
 		test_data    => undef,
 		prefix       => 'kur',
-		postfix      => undef,
 		frontend_obj => undef,
 		inited       => 0,
 		banned       => {},
@@ -213,13 +235,13 @@ sub new {
 	} elsif ( defined( $opts{ports} ) ) {
 		my %ports;
 		foreach my $item ( @{ $opts{ports} } ) {
-			if ( $item =~ /^[0-9]+$/ && $item >= 1 ) {
+			if ( $item =~ /^[0-9]+$/ && $item >= 1 && $item <= 65535 ) {
 				$ports{$item} = 1;
-			} elsif ( $item =~ /^[0-9]+$/ && $item < 1 ) {
+			} elsif ( $item =~ /^[0-9]+$/ ) {
 				$self->{perror} = 1;
 				$self->{error}  = 2;
 				$self->{errorString}
-					= $item . ' is not a valid value for a port as it must be a int greater or equal to 1';
+					= $item . ' is not a valid value for a port as it must be a int within the range 1 to 65535';
 				$self->warn;
 			} else {
 				# just using tcp here as protocol must be specified
@@ -287,6 +309,20 @@ sub new {
 		$self->warn;
 	}
 	$self->{name} = $opts{name};
+
+	# ipfw limits table names to 63 characters and the table is
+	# <prefix>_<name>, so catch over-long combos here rather than as a
+	# confusing error at init
+	if ( defined( $self->{name} ) && length( $self->{prefix} . '_' . $self->{name} ) > 63 ) {
+		$self->{perror} = 1;
+		$self->{error}  = 26;
+		$self->{errorString}
+			= 'the combined prefix and name, "'
+			. $self->{prefix} . '_'
+			. $self->{name}
+			. '", is longer than 63 characters, the max ipfw table name length';
+		$self->warn;
+	}
 
 	# used internally for testing
 	if ( defined( $opts{testing} ) ) {
@@ -446,9 +482,23 @@ sub init {
 	my @protocols;
 	if ( defined( $self->{protocols}[0] ) ) {
 		push( @protocols, @{ $self->{protocols} } );
+	} elsif ( defined($ports) ) {
+		# ports need a port-capable protocol, default to tcp and udp
+		push( @protocols, 'tcp', 'udp' );
 	} else {
-		push( @protocols, 'ip' );
+		# block all, both IPv4 and IPv6; ip4/ip6 are used rather than ip as
+		# in ipfw 'ip' means any packet, not IPv4, per ipfw(8)
+		push( @protocols, 'ip4', 'ip6' );
 	}
+
+	# protocols that accept a port specification
+	my %port_ok = ( tcp => 1, udp => 1, sctp => 1 );
+
+	# in ipfw 'me' matches only IPv4 addresses on the system and 'me6' only
+	# IPv6 ones, so each rule must be emitted for the right family; family
+	# neutral protocols such as tcp/udp get one rule per family
+	my %is_v6 = ( ip6 => 1, ipv6 => 1, icmp6 => 1, 'ipv6-icmp' => 1, icmpv6 => 1 );
+	my %is_v4 = ( ip4 => 1, ipv4 => 1, icmp => 1, igmp => 1 );
 
 	my @fail_okay_commands;
 	push( @fail_okay_commands, 'ipfw table ' . $self->{prefix} . '_' . $self->{name} . ' destroy' );
@@ -468,15 +518,44 @@ sub init {
 
 	# generates the block rules
 	foreach my $item (@protocols) {
-		my $command = 'ipfw add ' . $self->{options}{rule} . ' ' . $self->{options}{type} . ' ';
-		if ( $self->{options}{type} ne 'deny' ) {
-			$command = $command . $self->{options}{ $self->{options}{type} } . ' ';
+		# family specific protocols get one rule for their family; family
+		# neutral protocols such as tcp/udp get a rule for each family
+		my @families;
+		if ( $is_v6{$item} ) {
+			@families = (6);
+		} elsif ( $is_v4{$item} ) {
+			@families = (4);
+		} else {
+			@families = ( 4, 6 );
 		}
-		$command = $command . $item . ' from "table(' . $self->{prefix} . '_' . $self->{name} . ')" to me';
-		if ( defined($ports) ) {
-			$command = $command . ' ' . $ports;
-		}
-		push( @commands, $command );
+
+		foreach my $family (@families) {
+			# type is deny vs reject; for a reject the family of the rule
+			# decides between unreach (IPv4) and unreach6 (IPv6)
+			my $action;
+			if ( $self->{options}{type} eq 'deny' ) {
+				$action = 'deny';
+			} elsif ( $family == 6 ) {
+				$action = 'unreach6 ' . $self->{options}{unreach6};
+			} else {
+				$action = 'unreach ' . $self->{options}{unreach};
+			}
+
+			my $command
+				= 'ipfw add '
+				. $self->{options}{rule} . ' '
+				. $action . ' '
+				. $item
+				. ' from "table('
+				. $self->{prefix} . '_'
+				. $self->{name}
+				. ')" to '
+				. ( $family == 6 ? 'me6' : 'me' );
+			if ( defined($ports) && $port_ok{$item} ) {
+				$command = $command . ' ' . $ports;
+			}
+			push( @commands, $command );
+		} ## end foreach my $family (@families)
 	} ## end foreach my $item (@protocols)
 
 	if ( $self->{testing} ) {
@@ -535,6 +614,9 @@ sub ban {
 		return;
 	}
 
+	# lowercase so the same IPv6 IP in differing cases can't result in duplicate entries
+	$opts{ban} = lc( $opts{ban} );
+
 	if ( $self->{banned}{ $opts{ban} } ) {
 		if ( $self->{testing} ) {
 			$self->{frontend_obj}->{test_data} = 'already banned';
@@ -556,21 +638,29 @@ sub ban {
 		}
 	}
 
-	if ( $self->{options}{kill} ) {
-		$command
-			= 'sockstat -nc4 -P tcp |sed "s/.*tcp[46]  *//" | sed "s/:/ /g" | grep -i '
-			. $opts{ban}
-			. ' | xargs -n 4 tcpdrop';
-		if ( $self->{testing} ) {
-			push( @{ $self->{frontend_obj}->{test_data} }, $command );
-		} else {
-			my $output = `$command 2>&1`;
-		}
+	# tcpdrop only handles TCP, so only kill when tcp is among the blocked
+	# protocols; no protocols configured means everything is being blocked,
+	# tcp included
+	my $kill_applicable = !defined( $self->{protocols}[0] ) || ( grep { $_ eq 'tcp' } @{ $self->{protocols} } );
 
-		$command
-			= 'sockstat -n6 -P udp | grep -i '
-			. $opts{ban}
-			. ' | perl -lpe \'$_=~s/.*udp[46]  *//; $_=~s/:([0-9]+) / $1 /; $_=~s/:([0-9]+)$/ $1/; $_=~s/\%[a-zA-Z0-9]+/ /g ; print $_\'';
+	if ( $self->{options}{kill} && $kill_applicable ) {
+		if ( $opts{ban} =~ /\A$IPv4_re\z/ ) {
+			# for IPv4 every colon is a address/port separator, so a simple
+			# split works; -wF so the IP is matched as a fixed string and not
+			# as a regexp, preventing 1.2.3.4 from also matching 11.2.3.45
+			$command
+				= 'sockstat -nc4 -P tcp |sed "s/.*tcp[46]  *//" | sed "s/:/ /g" | grep -wF '
+				. $opts{ban}
+				. ' | xargs -n 4 tcpdrop';
+		} else {
+			# for IPv6 the address itself contains colons, so only the last
+			# colon of each field, the port, is turned into a space, and any
+			# scope ID is stripped as tcpdrop does not take them
+			$command
+				= 'sockstat -nc6 -P tcp |sed "s/.*tcp[46]  *//" | grep -E "(^|[[:space:]])'
+				. $opts{ban}
+				. ':[0-9]+([[:space:]]|\$)" | sed "s/%[a-zA-Z0-9]*//g" | sed -E "s/:([0-9]+)([[:space:]]|\$)/ \\1\\2/g" | xargs -n 4 tcpdrop';
+		}
 		if ( $self->{testing} ) {
 			push( @{ $self->{frontend_obj}->{test_data} }, $command );
 		} else {
@@ -619,6 +709,9 @@ sub unban {
 		$self->warn;
 		return;
 	}
+
+	# lowercase so the same IPv6 IP in differing cases can't result in duplicate entries
+	$opts{ban} = lc( $opts{ban} );
 
 	if ( !$self->{banned}{ $opts{ban} } ) {
 		if ( $self->{testing} ) {
@@ -687,7 +780,12 @@ sub re_init {
 		return;
 	}
 
-	$self->teardown;
+	# teardown is best effort here as a partially or fully wiped setup is
+	# exactly what re_init needs to recover from; init cleans up any remnants
+	{
+		local $@;
+		eval { $self->teardown; };
+	}
 	$self->init;
 
 	my @to_ban = keys( %{ $self->{banned} } );
@@ -736,8 +834,6 @@ sub teardown {
 
 	$self->{inited} = 0;
 
-	$self->{frontend_obj}->{test_data} = {};
-
 	my @commands;
 	push( @commands, 'ipfw table ' . $self->{prefix} . '_' . $self->{name} . ' destroy' );
 	push( @commands, 'ipfw delete ' . $self->{options}{rule} );
@@ -757,6 +853,100 @@ sub teardown {
 	} ## end else [ if ( $self->{testing} ) ]
 } ## end sub teardown
 
+=head2 stop
+
+Alias for L</teardown>, provided for parity with the fail2ban C<actionstop>
+concept.
+
+    $backend->stop;
+
+=cut
+
+sub stop {
+	my ( $self, %opts ) = @_;
+
+	return $self->teardown(%opts);
+}
+
+=head2 check
+
+Verifies that the IPFW table is still present and that the rule number still
+exists. Returns a true value if the setup is intact and a false value if any
+part of it appears to have been removed. This is the equivalent of fail2ban's
+C<actioncheck>.
+
+    if ( !$backend->check ) {
+        $backend->re_init;
+    }
+
+=cut
+
+sub check {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	my @commands = (
+		'ipfw table ' . $self->{prefix} . '_' . $self->{name} . ' info',
+		'ipfw list ' . $self->{options}{rule},
+	);
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = \@commands;
+		return 1;
+	}
+
+	foreach my $item (@commands) {
+		my $output = `$item 2>&1`;
+		if ( $? != 0 ) {
+			return 0;
+		}
+	}
+
+	return 1;
+} ## end sub check
+
+=head2 flush
+
+Removes all currently banned IPs at once by flushing the IPFW table, leaving
+the table and rule in place. This is the equivalent of fail2ban's
+C<actionflush>.
+
+    $backend->flush;
+
+=cut
+
+sub flush {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( !$self->{inited} ) {
+		$self->{error}       = 1;
+		$self->{errorString} = 'backend has not been inited';
+		$self->warn;
+		return;
+	}
+
+	my @commands = ( 'ipfw table ' . $self->{prefix} . '_' . $self->{name} . ' flush' );
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = \@commands;
+	} else {
+		foreach my $item (@commands) {
+			my $output = `$item 2>&1`;
+			if ( $? != 0 ) {
+				$self->{error} = 25;
+				$self->{errorString}
+					= 'flush failed. non-zero exit code for the command... "' . $item . '"... output... ' . $output;
+				$self->warn;
+			}
+		}
+	} ## end else [ if ( $self->{testing} ) ]
+
+	$self->{banned} = {};
+} ## end sub flush
+
 =head1 ERROR CODES / FLAGS
 
 Error handling is provided by L<Error::Helper>. All
@@ -768,7 +958,7 @@ Backend has not been initted yet.
 
 =head2 2, invalidPortSpecified
 
-Port is either not a positive int or a name that can be resolved by getservbyname.
+Port is either not an int within the range 1 to 65535 or a name that can be resolved by getservbyname.
 
 =head2 3, portsNotArray
 
@@ -780,7 +970,7 @@ The data passed to new for protocols is not an array.
 
 =head2 5, invalidPortSpecified
 
-Port is either not a positive int or a name that can be resolved by getservbyname.
+Port is either not an int within the range 1 to 65535 or a name that can be resolved by getservbyname.
 
 =head2 6, invalidPrefixSpecified
 
@@ -857,6 +1047,19 @@ value unstood by unreach6 for ipfw(8).
 =head2 23, initFailed
 
 One of the required commands for init failed.
+
+=head2 24, checkFailed
+
+The backend check raised an error.
+
+=head2 25, flushFailed
+
+One of the required commands for flush failed.
+
+=head2 26, nameTooLong
+
+The combined prefix and name is longer than the firewall allows for its
+object names.
 
 =head1 AUTHOR
 

@@ -13,11 +13,11 @@ Net::Firewall::BlockerHelper::backends::dummy - Example dummy backend for testin
 
 =head1 VERSION
 
-Version 0.0.1
+Version 0.1.0
 
 =cut
 
-our $VERSION = '0.0.1';
+our $VERSION = '0.1.0';
 
 =head1 SYNOPSIS
 
@@ -120,6 +120,9 @@ sub new {
 		errorString   => "",
 		errorExtra    => {
 			all_errors_fatal => 1,
+			# all_fatal is what Error::Helper 2.1.0 actually checks; all_errors_fatal
+			# is kept for the name documented in its POD
+			all_fatal        => 1,
 			flags            => {
 				1  => 'notInited',
 				2  => 'invalidPortSpecified',
@@ -139,6 +142,8 @@ sub new {
 				16 => 'reInitFailed',
 				17 => 'teardownFailed',
 				18 => 'alreadyInited',
+				24 => 'checkFailed',
+				25 => 'flushFailed',
 			},
 			fatal_flags      => {},
 			perror_not_fatal => 0,
@@ -150,7 +155,6 @@ sub new {
 		testing      => undef,
 		test_data    => undef,
 		prefix       => 'kur',
-		postfix      => undef,
 		frontend_obj => undef,
 		inited       => 0,
 		banned       => {},
@@ -165,13 +169,13 @@ sub new {
 	} elsif ( defined( $opts{ports} ) ) {
 		my %ports;
 		foreach my $item ( @{ $opts{ports} } ) {
-			if ( $item =~ /^[0-9]+$/ && $item >= 1 ) {
+			if ( $item =~ /^[0-9]+$/ && $item >= 1 && $item <= 65535 ) {
 				$ports{$item} = 1;
-			} elsif ( $item =~ /^[0-9]+$/ && $item < 1 ) {
+			} elsif ( $item =~ /^[0-9]+$/ ) {
 				$self->{perror} = 1;
 				$self->{error}  = 2;
 				$self->{errorString}
-					= $item . ' is not a valid value for a port as it must be a int greater or equal to 1';
+					= $item . ' is not a valid value for a port as it must be a int within the range 1 to 65535';
 				$self->warn;
 			} else {
 				# just using tcp here as protocol must be specified
@@ -328,7 +332,12 @@ sub ban {
 		return;
 	}
 
-	$self->{frontend_obj}->{test_data} = 'banned ' . $opts{ban};
+	# lowercase so the same IPv6 IP in differing cases can't result in duplicate entries
+	$opts{ban} = lc( $opts{ban} );
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = 'banned ' . $opts{ban};
+	}
 
 	$self->{banned}{ $opts{ban} } = 1;
 } ## end sub ban
@@ -372,7 +381,12 @@ sub unban {
 		return;
 	}
 
-	$self->{frontend_obj}->{test_data} = 'unbanned ' . $opts{ban};
+	# lowercase so the same IPv6 IP in differing cases can't result in duplicate entries
+	$opts{ban} = lc( $opts{ban} );
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = 'unbanned ' . $opts{ban};
+	}
 
 	delete( $self->{banned}{ $opts{ban} } );
 } ## end sub unban
@@ -390,7 +404,9 @@ sub list {
 
 	$self->errorblank;
 
-	$self->{frontend_obj}->{test_data} = 'list';
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = 'list';
+	}
 
 	return keys( %{ $self->{banned} } );
 }
@@ -406,7 +422,9 @@ sub re_init {
 
 	$self->errorblank;
 
-	$self->{frontend_obj}->{test_data} = 're_inited';
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = 're_inited';
+	}
 
 	$self->{inited} = 1;
 }
@@ -424,10 +442,71 @@ sub teardown {
 
 	$self->errorblank;
 
-	$self->{frontend_obj}->{test_data} = 'teardown';
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = 'teardown';
+	}
 
 	$self->{inited} = 0;
 } ## end sub teardown
+
+=head2 stop
+
+Alias for L</teardown>, provided for parity with the fail2ban C<actionstop>
+concept.
+
+    $backend->stop;
+
+=cut
+
+sub stop {
+	my ( $self, %opts ) = @_;
+
+	return $self->teardown(%opts);
+}
+
+=head2 check
+
+Dummy check. Always reports the setup as intact. This is the equivalent of
+fail2ban's C<actioncheck>.
+
+    my $healthy = $backend->check;
+
+=cut
+
+sub check {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = 'check';
+	}
+
+	return 1;
+}
+
+=head2 flush
+
+Dummy flush. Clears the internal list of bans. This is the equivalent of
+fail2ban's C<actionflush>.
+
+    $backend->flush;
+
+=cut
+
+sub flush {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = 'flush';
+	}
+
+	$self->{banned} = {};
+
+	return;
+}
 
 =head1 ERROR CODES / FLAGS
 
@@ -440,7 +519,7 @@ Backend has not been initted yet.
 
 =head2 2, invalidPortSpecified
 
-Port is either not a positive int or a name that can be resolved by getservbyname.
+Port is either not an int within the range 1 to 65535 or a name that can be resolved by getservbyname.
 
 =head2 3, portsNotArray
 
@@ -452,7 +531,7 @@ The data passed to new for protocols is not an array.
 
 =head2 5, invalidPortSpecified
 
-Port is either not a positive int or a name that can be resolved by getservbyname.
+Port is either not an int within the range 1 to 65535 or a name that can be resolved by getservbyname.
 
 =head2 6, invalidPrefixSpecified
 
@@ -507,6 +586,14 @@ Failed to teardown the backend.
 =head2 18, alreadyInited
 
 Backend has already been initiated.
+
+=head2 24, checkFailed
+
+The backend check raised an error.
+
+=head2 25, flushFailed
+
+Failed to flush the bans.
 
 =head1 AUTHOR
 

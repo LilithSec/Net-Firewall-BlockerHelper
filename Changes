@@ -1,5 +1,137 @@
 Revision history for Net-Firewall-BlockerHelper
 
+0.1.0   2026-07-13
+        - ipfw: emit family-correct rules. The ipfw 'me' keyword only matches
+          IPv4 addresses (me6 exists for IPv6), so the previous 'to me' rules
+          never blocked IPv6 traffic; family neutral protocols such as
+          tcp/udp now get one rule per family (to me and to me6) and family
+          specific ones a single rule for theirs. Reject rules pick
+          unreach/unreach6 per rule family.
+        - pf: no longer execute the kill pipelines when in testing mode; they
+          are recorded like every other command.
+        - re_init now treats teardown as best effort in all backends. With
+          errors being fatal, a strict teardown of an externally wiped setup
+          died and aborted the very re_init self-heal was attempting; init
+          does its own cleanup of remnants.
+        - Kill commands now handle both IPv4 and IPv6 in every backend that
+          has them. iptables/firewalld/nftables/ufw conntrack passes -f ipv6
+          for IPv6 IPs (conntrack defaults to IPv4 and would never kill IPv6
+          flows). ipfw picks the sockstat family and uses IPv6-safe parsing,
+          splitting only the port colon and stripping scope IDs, instead of
+          being IPv4 only. pf kill-by-port matches the family-specific state
+          format (IPv4 addr:port vs IPv6 addr[port]) instead of only ever
+          matching IPv4 states.
+        - nftables: gains the same conntrack based kill option as the
+          iptables backend.
+        - Kill commands cover UDP where the platform allows. conntrack -D -s
+          (iptables/firewalld/nftables/ufw) and pf's state killing are not
+          protocol filtered, so UDP was already covered and is now documented
+          and pinned by tests. ufw's ss kill mode now passes -tu so connected
+          UDP sockets are killed alongside TCP. ipfw remains TCP-only as
+          FreeBSD has no tcpdrop equivalent for UDP; being stateless rules,
+          UDP from a banned IP is blocked immediately regardless, which is
+          now documented.
+        - Kill commands are now scoped to the configured protocols, so an
+          instance blocking only udp never kills tcp state and vice versa.
+          conntrack kills (iptables/firewalld/nftables/ufw) are scoped via
+          -p per blocked protocol, ufw's ss kill picks -t/-u/-tu (or nothing
+          when neither is blocked), pf kills via the state table filtered to
+          the blocked protocols and ports (pfctl -k, which kills everything,
+          is only used when everything is being blocked), and ipfw skips
+          tcpdrop when tcp is not among the blocked protocols. With no
+          protocols configured everything is being blocked and the kills
+          remain unscoped; ports without protocols scopes to tcp/udp.
+        - Validate the combined prefix + name length against the kernel
+          object name limits (iptables chains 28, ipset and pf tables 31,
+          ipfw tables 63) at new, raising nameTooLong instead of failing
+          with a confusing command error at init.
+        - Add a nftables backend. A dedicated inet table is created per
+          instance with a input-hooked chain, v4/v6 sets, and block rules,
+          so teardown is a single table delete.
+        - Add a firewalld backend using ipset plus firewall-cmd --direct
+          rules, for hosts where raw iptables calls would fight firewalld.
+        - Add a ufw backend using per-IP prepend/delete rules, with optional
+          connection killing via ss or conntrack.
+        - Add a route backend blocking whole IPs via iproute2 null routes
+          (unreachable/blackhole/prohibit); works with no firewall at all.
+        - Add a npf backend for NetBSD, managing IPs in a npf table declared
+          in npf.conf.
+        - Add a cloudflare backend managing IP access rules via the
+          Cloudflare v4 API using LWP::UserAgent (equivalent to the fail2ban
+          cloudflare/cloudflare-token actions, supporting both token and
+          legacy email+key auth).
+        - Add a netscaler backend binding IPs into a Citrix NetScaler/ADC
+          policy dataset via the NITRO REST API using LWP::UserAgent.
+        - Add a nsupdate backend maintaining a DNS based blocklist via BIND
+          dynamic updates (IPv4 only, matching the fail2ban action).
+        - LWP::UserAgent is loaded at run time only by the backends needing
+          it and is listed as a recommends, not a requirement.
+        - Security: anchor the IPv4/IPv6 validation regexps in the frontend
+          and all backends, preventing shell command injection via crafted
+          ban targets.
+        - Fix runtime errors (failed ban/unban/init/teardown/flush commands
+          and the like) being warnings instead of fatal as documented. The
+          installed Error::Helper checks errorExtra all_fatal rather than the
+          all_errors_fatal its POD documents, so command failures were
+          silently swallowed; both keys are now set.
+        - Deepen the check implementations so externally removed rules are
+          noticed and self-heal actually fires: ipfw also verifies the rule
+          number exists, pf also verifies the anchor still holds rules, and
+          iptables verifies each block rule in the chain via iptables -C.
+        - Fix the ipfw kill option: the UDP command was a no-op pipeline and
+          has been removed, and the IP is now matched as a fixed word
+          (grep -wF) so 1.2.3.4 no longer also matches the likes of
+          11.2.3.45. The pf kill-by-port grep likewise now escapes the IP.
+        - Fix the frontend reporting noBackendSpecified instead of
+          invalidBackend (swapped error/perror fields) for a bad backend name.
+        - Validate ports as 1-65535 instead of any positive int, so bad ports
+          fail at new rather than as firewall command errors at init.
+        - iptables: treat sctp as port-capable like ipfw/pf, and recognize
+          the icmp6/icmpv6 aliases of ipv6-icmp when splitting protocols per
+          family so they are never emitted into the v4 table.
+        - Lowercase IPs on ban/unban so the same IPv6 IP in differing cases
+          can not result in duplicate or orphaned entries.
+        - Frontend methods now raise a clear error mentioning init_backend
+          when called before init_backend instead of dying with a confusing
+          undefined-value message.
+        - Add tests: real (non-testing) command execution and failure error
+          codes via the shell backend including end-to-end self-heal,
+          teardown/re_init command content and ordering, duplicate-ban and
+          unban-of-unbanned short-circuits, IPv6 routing and case
+          normalization per backend, check probe depth, port boundaries, and
+          exact error code/flag assertions.
+        - Add a working iptables backend using ipset with iptables/ip6tables.
+        - Add stop, check, and flush methods to the frontend and all backends,
+          equivalent to fail2ban's actionstop, actioncheck, and actionflush.
+        - Add optional self healing: verify the firewall setup before each
+          ban/unban and re_init it if it was removed externally. On by default,
+          controlled by the self_heal option (per-call overridable).
+        - shell backend: add optional check and flush options.
+        - Fix the pf backend so kill without ports kills all connections for
+          the IP rather than doing nothing.
+        - Fix the pf backend ban/unban using malformed pfctl table syntax
+          (-T <table> add -> -t <table> -T add), which errored on real pf.
+        - ipfw/pf: only attach ports to port-capable protocols (tcp/udp/sctp)
+          and default to tcp/udp when ports are given without protocols,
+          instead of generating port-on-ip/icmp rules that failed at init.
+        - ipfw: block IPv4 and IPv6 by default (emit ip4 and ip6 rules; the
+          ipfw 'ip' keyword means any packet, not IPv4, per ipfw(8)) and
+          choose unreach/unreach6 per protocol family, so banned IPv6 addresses
+          are actually blocked and reject rules are valid per family. The type
+          option is now deny-vs-reject; unreach and unreach6 are the per-family
+          reject codes (legacy type values still accepted).
+        - Fix backends reporting the wrong error flag (invalidPrefixSpecified
+          instead of invalidName) for a bad or missing name.
+        - Fix exit-code checks to use numeric comparison instead of string.
+        - Fix protocol validation error messages to reference getprotobyname
+          instead of getservbyname.
+        - Modernize init_backend to load the backend with require instead of a
+          constructed string eval.
+        - Only write test_data when running in testing mode.
+        - Documentation and packaging fixes: correct SYNOPSIS backend names,
+          update the README backend list, fix a malformed POD directive, add
+          MANIFEST entries, and add tests for the new functionality.
+
 0.0.1   2025-07-09/22:00
         - Initial release.
 

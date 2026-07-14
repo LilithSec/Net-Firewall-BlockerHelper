@@ -1,4 +1,4 @@
-package Net::Firewall::BlockerHelper::backends::iptables;
+package Net::Firewall::BlockerHelper::backends::firewalld;
 
 use 5.006;
 use strict;
@@ -9,7 +9,7 @@ use Regexp::IPv6 qw($IPv6_re);
 
 =head1 NAME
 
-Net::Firewall::BlockerHelper::backends::iptables - iptables/ip6tables backend for Net::Firewall::BlockerHelper.
+Net::Firewall::BlockerHelper::backends::firewalld - firewalld backend for Net::Firewall::BlockerHelper.
 
 =head1 VERSION
 
@@ -21,61 +21,34 @@ our $VERSION = '0.1.0';
 
 =head1 SYNOPSIS
 
-    use Net::Firewall::BlockerHelper::backends::iptables;
+    use Net::Firewall::BlockerHelper;
 
-    my $backend1;
-    my $backend2;
-    eval {
-        $backend1 = Net::Firewall::BlockerHelper::backends::iptables->new(
-                name => 'all',
-                options=>{ kill=>1 },
-            );
-        $backend2 = Net::Firewall::BlockerHelper::backends::iptables->new(
-                ports => ['143'],
-                protocols => ['tcp'],
-                name => 'imap',
-            );
-    };
-    if ($@) {
-        print 'Error: '
-            . $Error::Helper::error
-            . "\nError String: "
-            . $Error::Helper::errorString
-            . "\nError Flag: "
-            . $Error::Helper::errorFlag . "\n";
-    }
+    my $fw_helper = Net::Firewall::BlockerHelper->new(
+            backend => 'firewalld',
+            ports => ['22'],
+            protocols => ['tcp'],
+            name => 'ssh',
+        );
 
-    $backend1->init;
-    $backend2->init;
-
-    $backend1->ban(ban=>'1.2.3.4');
-    $backend1->ban(ban=>'4.3.2.1');
-    $backend2->ban(ban=>'4.3.2.1');
-
-    use Data::Dumper;
-    print Dumper($backend1->list);
-    print Dumper($backend2->list);
-
-    $backend1->unban(ban=>'4.3.2.1');
-
-    $backend1->teardown;
-    $backend2->teardown;
+    $fw_helper->init_backend;
+    $fw_helper->ban(ban => '1.2.3.4');
+    $fw_helper->unban(ban => '1.2.3.4');
+    $fw_helper->teardown;
 
 =head1 DESCRIPTION
 
-This backend blocks IPs using L<ipset(8)> in combination with
-L<iptables(8)> and L<ip6tables(8)>.
+Blocks IPs on hosts managed by L<firewalld(1)>, where using the iptables
+backend directly would fight the daemon and be lost on reload.
 
-For each instance two ipsets are created, one for IPv4
-(C<< <prefix>_<name>_4 >>) and one for IPv6 (C<< <prefix>_<name>_6 >>),
-along with a dedicated chain (C<< <prefix>_<name> >>) in each of the
-C<filter> tables. The chain is populated with the block rules and jumped
-to from C<INPUT>. Banning an IP is then simply a matter of adding it to
-the relevant ipset.
+Like the iptables backend, two ipsets are created via L<ipset(8)>, one for
+IPv4 (C<< <prefix>_<name>_4 >>) and one for IPv6 (C<< <prefix>_<name>_6 >>).
+The block rules are inserted through the firewalld direct interface
+(C<firewall-cmd --direct>) into the configured chain (INPUT_direct by
+default). Banning an IP adds it to the relevant ipset.
 
-Requires C<ipset>, C<iptables>, and C<ip6tables> to be installed and in
-the C<PATH> of the process, which must have sufficient privileges to run
-them.
+Requires C<firewall-cmd> and C<ipset> to be installed and in the C<PATH> of
+the process, which must have sufficient privileges to run them. firewalld
+must be running.
 
 =head1 METHODS
 
@@ -87,15 +60,18 @@ Initiates the the object.
             outside of making sure it is a hash ref if defined. See below for furhter info.
         - Default :: {}
 
-    - ports :: A array of ports to block. Checked to make sure they are positive ints or a valid
-            service name via getservbyname. All ports will be blocked if non are specified. If
-            duplicates are removed.
+    - ports :: A array of ports to block. Checked to make sure they are ints within the
+            range 1 to 65535 or a valid service name via getservbyname. All ports will be
+            blocked if non are specified. Duplicates are removed.
         - Default :: []
 
-    - protocols :: A array of protocols to block. By default will block all. This
-            is checked against /etc/protocols via the function getprotobyname. Duplicates
-            will be discarded.
-        - Default :: []
+    - protocols :: A array of protocols to block. This is checked against
+            /etc/protocols via the function getprotobyname. Duplicates will be
+            discarded. If no protocols are given, everything sourced from the
+            sets is blocked, unless ports are given, in which case it defaults
+            to tcp and udp. Ports are only attached to port-capable protocols
+            (tcp/udp/sctp); other protocols are blocked without a port.
+        - Default :: [], or ['tcp','udp'] when ports are given
 
     - prefix :: Prefix to use. Must match the regex /^[a-zA-Z0-9]+$/
         - default :: kur
@@ -106,8 +82,12 @@ Initiates the the object.
 The options hash accepts the following.
 
     - type :: The drop method to use. Should either be 'drop' or 'reject'.
-            'reject' sends an ICMP port-unreachable back. See iptables(8).
+            'reject' sends an ICMP port-unreachable back.
         - Default :: drop
+
+    - chain :: The direct interface chain to add the rules to.
+            Must match /^[a-zA-Z0-9_\-]+$/.
+        - Default :: INPUT_direct
 
     - kill :: Use conntrack(8) to drop existing connection tracking entries
             for the banned IP, for both IPv4 and IPv6. When protocols are
@@ -119,23 +99,6 @@ The options hash accepts the following.
         - Default :: 0
 
 All errors are considered fatal, meaning if new fails it will die.
-
-    my $backend;
-    eval {
-        $backend = Net::Firewall::BlockerHelper::backends::iptables->new(
-                ports => ['22'],
-                protocols => ['tcp'],
-                name => 'ssh',
-            );
-    };
-    if ($@) {
-        print 'Error: '
-            . $Error::Helper::error
-            . "\nError String: "
-            . $Error::Helper::errorString
-            . "\nError Flag: "
-            . $Error::Helper::errorFlag . "\n";
-    }
 
 =cut
 
@@ -164,7 +127,6 @@ sub new {
 				8  => 'optionsNotHash',
 				9  => 'noBanItem',
 				10 => 'banItemNotIP',
-				11 => 'invalidBackend',
 				12 => 'backendInitError',
 				13 => 'banFailed',
 				14 => 'unbanFailed',
@@ -172,6 +134,7 @@ sub new {
 				16 => 'reInitFailed',
 				17 => 'teardownFailed',
 				18 => 'alreadyInited',
+				19 => 'chainInvalid',
 				20 => 'typeInvalid',
 				21 => 'nameTooLong',
 				23 => 'initFailed',
@@ -182,8 +145,9 @@ sub new {
 			perror_not_fatal => 0,
 		},
 		options => {
-			type => 'drop',
-			kill => 0,
+			type  => 'drop',
+			chain => 'INPUT_direct',
+			kill  => 0,
 		},
 		ports        => [],
 		protocols    => [],
@@ -223,7 +187,7 @@ sub new {
 					$self->warn;
 				}
 				$ports{$port} = 1;
-			} ## end else [ if ( $item =~ /^[0-9]+$/ && $item >= 1 ) ]
+			} ## end else [ if ( $item =~ /^[0-9]+$/ && $item >= 1 &&...)]
 		} ## end foreach my $item ( @{ $opts{ports} } )
 		my @port_keys = keys(%ports);
 		@port_keys = sort { $a <=> $b } @port_keys;
@@ -279,17 +243,17 @@ sub new {
 	}
 	$self->{name} = $opts{name};
 
-	# iptables limits chain names to 28 characters and ipset set names to 31;
-	# the chain is <prefix>_<name> and the sets are <prefix>_<name>_4/_6, so
-	# catch over-long combos here rather than as a confusing error at init
-	if ( defined( $self->{name} ) && length( $self->{prefix} . '_' . $self->{name} ) > 28 ) {
+	# ipset limits set names to 31 characters and the sets are
+	# <prefix>_<name>_4/_6, so catch over-long combos here rather than as a
+	# confusing error at init
+	if ( defined( $self->{name} ) && length( $self->{prefix} . '_' . $self->{name} ) > 29 ) {
 		$self->{perror} = 1;
 		$self->{error}  = 21;
 		$self->{errorString}
 			= 'the combined prefix and name, "'
 			. $self->{prefix} . '_'
 			. $self->{name}
-			. '", is longer than 28 characters, the max iptables chain name length';
+			. '", is longer than 29 characters, leaving no room for the _4/_6 suffix within the 31 character ipset name limit';
 		$self->warn;
 	}
 
@@ -332,6 +296,17 @@ sub new {
 			$self->{options}{type} = 'drop';
 		}
 
+		if ( defined( $opts{options}{chain} ) && $opts{options}{chain} !~ /^[a-zA-Z0-9_\-]+$/ ) {
+			$self->{perror} = 1;
+			$self->{error}  = 19;
+			$self->{errorString}
+				= '$opts{options}{chain} is "'
+				. $opts{options}{chain}
+				. '" and does not match /^[a-zA-Z0-9_\-]+$/';
+			$self->warn;
+		} elsif ( !defined( $opts{options}{chain} ) ) {
+			$self->{options}{chain} = 'INPUT_direct';
+		}
 	} ## end if ( defined( $opts{options} ) )
 
 	return $self;
@@ -339,29 +314,29 @@ sub new {
 
 =head2 _set_names
 
-Internal helper. Returns the IPv4 ipset name, IPv6 ipset name, and chain
-name for this instance.
+Internal helper. Returns the IPv4 ipset name and IPv6 ipset name for this
+instance.
 
 =cut
 
 sub _set_names {
 	my ($self) = @_;
 
-	my $chain = $self->{prefix} . '_' . $self->{name};
-	return ( $chain . '_4', $chain . '_6', $chain );
+	my $base = $self->{prefix} . '_' . $self->{name};
+	return ( $base . '_4', $base . '_6' );
 }
 
-=head2 _rule_commands
+=head2 _rule_args
 
-Internal helper. Returns the list of commands that populate the chain
-with the block rules, based on the configured protocols and ports.
+Internal helper. Returns a list of hashes, each with the direct interface
+family (ipv4/ipv6) and the iptables argument string for one block rule.
 
 =cut
 
-sub _rule_commands {
+sub _rule_args {
 	my ($self) = @_;
 
-	my ( $set4, $set6, $chain ) = $self->_set_names;
+	my ( $set4, $set6 ) = $self->_set_names;
 
 	my @ports    = @{ $self->{ports} };
 	my @protos   = @{ $self->{protocols} };
@@ -375,29 +350,34 @@ sub _rule_commands {
 		$t6 = 'REJECT --reject-with icmp6-port-unreachable';
 	}
 
-	my @families = (
-		{ cmd => 'iptables',  set => $set4, tgt => $t4, family => 4 },
-		{ cmd => 'ip6tables', set => $set6, tgt => $t6, family => 6 },
-	);
-
 	# protocols that accept a port specification
 	my %port_ok = ( tcp => 1, udp => 1, sctp => 1 );
 
 	# the various names the IPv6 ICMP protocol may go by
 	my %v6_icmp = ( 'ipv6-icmp' => 1, 'icmp6' => 1, 'icmpv6' => 1 );
 
-	my @commands;
+	my @families = (
+		{ fam => 'ipv4', set => $set4, tgt => $t4, family => 4 },
+		{ fam => 'ipv6', set => $set6, tgt => $t6, family => 6 },
+	);
+
+	my @rules;
 	foreach my $fam (@families) {
-		my $base = $fam->{cmd} . ' -A ' . $chain . ' -m set --match-set ' . $fam->{set} . ' src';
+		my $base = '-m set --match-set ' . $fam->{set} . ' src';
 
 		if ( !@protos && !@ports ) {
 			# block everything sourced from the set
-			push( @commands, $base . ' -j ' . $fam->{tgt} );
+			push( @rules, { fam => $fam->{fam}, args => $base . ' -j ' . $fam->{tgt} } );
 		} elsif ( !@protos && @ports ) {
 			# ports require a protocol, default to tcp and udp
 			foreach my $proto ( 'tcp', 'udp' ) {
-				push( @commands,
-					$base . ' -p ' . $proto . ' -m multiport --dports ' . $port_str . ' -j ' . $fam->{tgt} );
+				push(
+					@rules,
+					{
+						fam  => $fam->{fam},
+						args => $base . ' -p ' . $proto . ' -m multiport --dports ' . $port_str . ' -j ' . $fam->{tgt}
+					}
+				);
 			}
 		} else {
 			foreach my $proto (@protos) {
@@ -408,18 +388,18 @@ sub _rule_commands {
 					next if ( $v6_icmp{$proto} );
 				}
 
-				my $rule = $base . ' -p ' . $proto;
+				my $args = $base . ' -p ' . $proto;
 				if ( @ports && $port_ok{$proto} ) {
-					$rule .= ' -m multiport --dports ' . $port_str;
+					$args .= ' -m multiport --dports ' . $port_str;
 				}
-				$rule .= ' -j ' . $fam->{tgt};
-				push( @commands, $rule );
+				$args .= ' -j ' . $fam->{tgt};
+				push( @rules, { fam => $fam->{fam}, args => $args } );
 			} ## end foreach my $proto (@protos)
 		} ## end else [ if ( !@protos && !@ports ) ]
 	} ## end foreach my $fam (@families)
 
-	return @commands;
-} ## end sub _rule_commands
+	return @rules;
+} ## end sub _rule_args
 
 =head2 _kill_commands
 
@@ -481,12 +461,8 @@ sub _kill_commands {
 
 =head2 init
 
-Initiates the backend. This will attempt to drop the chain and ipsets
+Initiates the backend. This will attempt to remove the rules and ipsets
 prior to re-adding them.
-
-No arguments are taken.
-
-May called a second time, it will error.
 
     $backend->init;
 
@@ -507,16 +483,17 @@ sub init {
 		$self->{frontend_obj}->{test_data} = {};
 	}
 
-	my ( $set4, $set6, $chain ) = $self->_set_names;
+	my ( $set4, $set6 ) = $self->_set_names;
+	my $chain = $self->{options}{chain};
 
-	# these are cleanup commands for any stale state and are allowed to fail
+	my @rules = $self->_rule_args;
+
+	# stale state cleanup, allowed to fail
 	my @fail_okay_commands;
-	push( @fail_okay_commands, 'iptables -D INPUT -j ' . $chain );
-	push( @fail_okay_commands, 'ip6tables -D INPUT -j ' . $chain );
-	push( @fail_okay_commands, 'iptables -F ' . $chain );
-	push( @fail_okay_commands, 'ip6tables -F ' . $chain );
-	push( @fail_okay_commands, 'iptables -X ' . $chain );
-	push( @fail_okay_commands, 'ip6tables -X ' . $chain );
+	foreach my $rule (@rules) {
+		push( @fail_okay_commands,
+			'firewall-cmd --direct --remove-rule ' . $rule->{fam} . ' filter ' . $chain . ' 0 ' . $rule->{args} );
+	}
 	push( @fail_okay_commands, 'ipset destroy ' . $set4 );
 	push( @fail_okay_commands, 'ipset destroy ' . $set6 );
 
@@ -529,18 +506,12 @@ sub init {
 	}
 
 	my @commands;
-	# create the ipsets and the chain
 	push( @commands, 'ipset create ' . $set4 . ' hash:ip family inet' );
 	push( @commands, 'ipset create ' . $set6 . ' hash:ip family inet6' );
-	push( @commands, 'iptables -N ' . $chain );
-	push( @commands, 'ip6tables -N ' . $chain );
-
-	# add the block rules to the chain
-	push( @commands, $self->_rule_commands );
-
-	# jump to the chain from INPUT
-	push( @commands, 'iptables -A INPUT -j ' . $chain );
-	push( @commands, 'ip6tables -A INPUT -j ' . $chain );
+	foreach my $rule (@rules) {
+		push( @commands,
+			'firewall-cmd --direct --add-rule ' . $rule->{fam} . ' filter ' . $chain . ' 0 ' . $rule->{args} );
+	}
 
 	if ( $self->{testing} ) {
 		$self->{frontend_obj}->{test_data}{commands} = \@commands;
@@ -642,7 +613,7 @@ sub ban {
 
 =head2 unban
 
-Unbans the an IP.
+Unbans the IP.
 
     $backend->unban(ban => $ip);
 
@@ -793,10 +764,7 @@ sub re_init {
 
 Tears down the setup for the backend.
 
-This will remove the chain, the jump from INPUT, and the ipsets.
-
-If called prior to calling init, this will error. It won't check if it has been
-inited or not.
+This will remove the direct rules and the ipsets.
 
     $backend->teardown;
 
@@ -809,15 +777,14 @@ sub teardown {
 
 	$self->{inited} = 0;
 
-	my ( $set4, $set6, $chain ) = $self->_set_names;
+	my ( $set4, $set6 ) = $self->_set_names;
+	my $chain = $self->{options}{chain};
 
 	my @commands;
-	push( @commands, 'iptables -D INPUT -j ' . $chain );
-	push( @commands, 'ip6tables -D INPUT -j ' . $chain );
-	push( @commands, 'iptables -F ' . $chain );
-	push( @commands, 'ip6tables -F ' . $chain );
-	push( @commands, 'iptables -X ' . $chain );
-	push( @commands, 'ip6tables -X ' . $chain );
+	foreach my $rule ( $self->_rule_args ) {
+		push( @commands,
+			'firewall-cmd --direct --remove-rule ' . $rule->{fam} . ' filter ' . $chain . ' 0 ' . $rule->{args} );
+	}
 	push( @commands, 'ipset destroy ' . $set4 );
 	push( @commands, 'ipset destroy ' . $set6 );
 
@@ -853,10 +820,10 @@ sub stop {
 
 =head2 check
 
-Verifies that the ipsets, the chain jump, and each of the block rules in the
-chain are still in place. Returns a true value if the setup is intact and a
-false value if any part is missing. This is the equivalent of fail2ban's
-C<actioncheck>.
+Verifies that firewalld is running, the ipsets are still present, and each
+of the direct rules is still in place. Returns a true value if the setup is
+intact and a false value if any part is missing. This is the equivalent of
+fail2ban's C<actioncheck>.
 
     if ( !$backend->check ) {
         $backend->re_init;
@@ -869,22 +836,14 @@ sub check {
 
 	$self->errorblank;
 
-	my ( $set4, $set6, $chain ) = $self->_set_names;
+	my ( $set4, $set6 ) = $self->_set_names;
+	my $chain = $self->{options}{chain};
 
-	# reuse the -A commands that populate the chain as -C existence checks,
-	# so every block rule the chain should contain is verified
-	my @rule_checks = $self->_rule_commands;
-	foreach my $item (@rule_checks) {
-		$item =~ s/ -A / -C /;
+	my @commands = ( 'firewall-cmd --state', 'ipset list ' . $set4, 'ipset list ' . $set6 );
+	foreach my $rule ( $self->_rule_args ) {
+		push( @commands,
+			'firewall-cmd --direct --query-rule ' . $rule->{fam} . ' filter ' . $chain . ' 0 ' . $rule->{args} );
 	}
-
-	my @commands = (
-		'ipset list ' . $set4,
-		'ipset list ' . $set6,
-		'iptables -C INPUT -j ' . $chain,
-		'ip6tables -C INPUT -j ' . $chain,
-		@rule_checks,
-	);
 
 	if ( $self->{testing} ) {
 		$self->{frontend_obj}->{test_data} = \@commands;
@@ -904,8 +863,7 @@ sub check {
 =head2 flush
 
 Removes all currently banned IPs at once by flushing the ipsets, leaving the
-chain and rules in place. This is the equivalent of fail2ban's
-C<actionflush>.
+rules in place. This is the equivalent of fail2ban's C<actionflush>.
 
     $backend->flush;
 
@@ -946,103 +904,32 @@ sub flush {
 
 =head1 ERROR CODES / FLAGS
 
-Error handling is provided by L<Error::Helper>. All
-errors are considered fatal.
+Error handling is provided by L<Error::Helper>. All errors are considered
+fatal.
 
-=head2 1, notInited
-
-Backend has not been initted yet.
-
-=head2 2, invalidPortSpecified
-
-Port is either not an int within the range 1 to 65535 or a name that can be resolved by getservbyname.
-
-=head2 3, portsNotArray
-
-The data passed to new for ports is not an array.
-
-=head2 4, protocolsNotArray
-
-The data passed to new for protocols is not an array.
-
-=head2 5, invalidPortSpecified
-
-Port is either not an int within the range 1 to 65535 or a name that can be resolved by getservbyname.
-
-=head2 6, invalidPrefixSpecified
-
-The specified prefix did not match /^[a-zA-Z0-9]+$/.
-
-=head2 7, invalidName
-
-The name is either undef or does not match /^[a-zA-Z0-9\-]+$/.
-
-=head2 8, optionsNotHash
-
-The item passed to new for options is not a hash.
-
-=head2 9, noBanItem
-
-No IP specified to ban.
-
-=head2 10, banItemNotIP
-
-The item to ban is not an IP. Either wrong ref type or regexp
-test using L<Regexp::IPv4> and L<Regexp::IPv6> failed.
-
-=head2 11, invalidBackend
-
-The specified backend failed to pass a basic sanity check of making sure it
-matches the regexp /^[a-zA-Z0-9\_]+$/.
-
-=head2 12, backendInitError
-
-Failed to init the backend.
-
-=head2 13, banFailed
-
-Failed to ban the item.
-
-=head2 14, unbanFailed
-
-Failed to unban the item.
-
-=head2 15, listFailed
-
-Failed get a list of bans.
-
-=head2 16, reInitFailed
-
-Failed to re_init the backend.
-
-=head2 17, teardownFailed
-
-Failed to teardown the backend.
-
-=head2 18, alreadyInited
-
-Backend has already been initiated.
-
-=head2 20, typeInvalid
-
-The value for type is not valid. Should be 'drop' or 'reject'.
-
-=head2 23, initFailed
-
-One of the required commands for init failed.
-
-=head2 24, checkFailed
-
-The backend check raised an error.
-
-=head2 25, flushFailed
-
-One of the required commands for flush failed.
-
-=head2 21, nameTooLong
-
-The combined prefix and name is longer than the firewall allows for its
-object names.
+    1  notInited
+    2  invalidPortSpecified
+    3  portsNotArray
+    4  protocolsNotArray
+    5  invalidPortSpecified
+    6  invalidPrefixSpecified
+    7  invalidName
+    8  optionsNotHash
+    9  noBanItem
+    10 banItemNotIP
+    12 backendInitError
+    13 banFailed
+    14 unbanFailed
+    15 listFailed
+    16 reInitFailed
+    17 teardownFailed
+    18 alreadyInited
+    19 chainInvalid
+    20 typeInvalid
+    21 nameTooLong
+    23 initFailed
+    24 checkFailed
+    25 flushFailed
 
 =head1 AUTHOR
 
@@ -1051,36 +938,7 @@ Zane C. Bowers-Hadley, C<< <vvelox at vvelox.ent> >>
 =head1 BUGS
 
 Please report any bugs or feature requests to C<bug-net-firewall-blockerhelper at rt.cpan.org>, or through
-the web interface at L<https://rt.cpan.org/NoAuth/ReportBug.html?Queue=Net-Firewall-BlockerHelper>.  I will be notified, and then you'll
-automatically be notified of progress on your bug as I make changes.
-
-
-
-
-=head1 SUPPORT
-
-You can find documentation for this module with the perldoc command.
-
-    perldoc Net::Firewall::BlockerHelper
-
-
-You can also look for information at:
-
-=over 4
-
-=item * RT: CPAN's request tracker (report bugs here)
-
-L<https://rt.cpan.org/NoAuth/Bugs.html?Dist=Net-Firewall-BlockerHelper>
-
-=item * Search CPAN
-
-L<https://metacpan.org/release/Net-Firewall-BlockerHelper>
-
-=back
-
-
-=head1 ACKNOWLEDGEMENTS
-
+the web interface at L<https://rt.cpan.org/NoAuth/ReportBug.html?Queue=Net-Firewall-BlockerHelper>.
 
 =head1 LICENSE AND COPYRIGHT
 

@@ -4,9 +4,24 @@ Helps manage (un)blocking IPs via various firewalls.
 
 Currently included backends are for...
 
+- firewalld
 - ipfw
 - iptables
+- nftables
+- npf
 - pf
+- route (null/blackhole routes via iproute2)
+- ufw
+
+The following remote/API backends are available. These use LWP::UserAgent,
+which is only loaded if they are used.
+
+- cloudflare
+- netscaler
+
+The following other remote backends are available.
+
+- nsupdate (DNS based blocklist via BIND dynamic updates)
 
 The following generic backends are available.
 

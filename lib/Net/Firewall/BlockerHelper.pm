@@ -13,11 +13,11 @@ Net::Firewall::BlockerHelper - Helps with managing firewalls for banning IPs.
 
 =head1 VERSION
 
-Version 0.0.1
+Version 0.1.0
 
 =cut
 
-our $VERSION = '0.0.1';
+our $VERSION = '0.1.0';
 
 =head1 SYNOPSIS
 
@@ -77,8 +77,8 @@ Initiates the the object.
             outside of making sure it is a hash ref if defined.
         - Default :: {}
 
-    - ports :: A array of ports to block. Checked to make sure they are positive ints or a valid
-            service name via getservbyname.
+    - ports :: A array of ports to block. Checked to make sure they are ints within
+            the range 1 to 65535 or a valid service name via getservbyname.
         - Default :: []
 
     - protocols :: A array of protocols to block. By default will block all. This
@@ -90,6 +90,13 @@ Initiates the the object.
 
     - name :: Name of this specific instance.
         - default :: undef
+
+    - self_heal :: Before each ban or unban, verify the firewall setup is
+            still present (via the backend's check) and re_init it if it was
+            removed externally. This is the fail2ban actioncheck-before-action
+            behavior. Adds one check probe per ban/unban. Can be overridden per
+            call by passing self_heal to ban/unban.
+        - default :: 1
 
 All errors are considered fatal, meaning if new fails it will die.
 
@@ -124,6 +131,9 @@ sub new {
 		errorString   => "",
 		errorExtra    => {
 			all_errors_fatal => 1,
+			# all_fatal is what Error::Helper 2.1.0 actually checks; all_errors_fatal
+			# is kept for the name documented in its POD
+			all_fatal        => 1,
 			flags            => {
 				1  => 'noBackendSpecified',
 				2  => 'invalidPortSpecified',
@@ -142,6 +152,8 @@ sub new {
 				15 => 'listFailed',
 				16 => 'reInitFailed',
 				17 => 'teardownFailed',
+				24 => 'checkFailed',
+				25 => 'flushFailed',
 			},
 			fatal_flags      => {},
 			perror_not_fatal => 0,
@@ -155,6 +167,7 @@ sub new {
 		prefix      => 'kur',
 		name        => undef,
 		backend_obj => undef,
+		self_heal   => 1,
 	};
 	bless $self;
 
@@ -167,8 +180,8 @@ sub new {
 	$self->{backend} = $opts{backend};
 
 	if ( $self->{backend} !~ /^[a-zA-Z0-9\_]+$/ ) {
-		$self->{perror} = 11;
-		$self->{error}  = 1;
+		$self->{perror} = 1;
+		$self->{error}  = 11;
 		$self->{errorString}
 			= '"'
 			. $self->{backend}
@@ -184,14 +197,14 @@ sub new {
 	} elsif ( defined( $opts{ports} ) ) {
 		my %ports;
 		foreach my $item ( @{ $opts{ports} } ) {
-			if ( $item =~ /^[0-9]+$/ && $item >= 1 ) {
+			if ( $item =~ /^[0-9]+$/ && $item >= 1 && $item <= 65535 ) {
 				#push( @{ $self->{ports} }, $item );
 				$ports{$item} = 1;
-			} elsif ( $item =~ /^[0-9]+$/ && $item < 1 ) {
+			} elsif ( $item =~ /^[0-9]+$/ ) {
 				$self->{perror} = 1;
 				$self->{error}  = 2;
 				$self->{errorString}
-					= $item . ' is not a valid value for a port as it must be a int greater or equal to 1';
+					= $item . ' is not a valid value for a port as it must be a int within the range 1 to 65535';
 				$self->warn;
 			} else {
 				# just using tcp here as protocol must be specified
@@ -267,6 +280,11 @@ sub new {
 		$self->{testing} = $opts{testing};
 	}
 
+	# check-before-ban self healing, on by default
+	if ( defined( $opts{self_heal} ) ) {
+		$self->{self_heal} = $opts{self_heal} ? 1 : 0;
+	}
+
 	if ( defined( $opts{options} ) ) {
 		if ( ref( $opts{options} ) ne 'HASH' ) {
 			$self->{perror}      = 1;
@@ -298,27 +316,29 @@ sub init_backend {
 
 	my $backend = 'Net::Firewall::BlockerHelper::backends::' . $self->{backend};
 	my $backend_obj;
-	my $init_string
-		= 'use '
-		. $backend
-		. '; $backend_obj='
-		. $backend
-		. '->new('
-		. 'options=>$self->{options}, '
-		. 'ports=>$self->{ports}, '
-		. 'protocols=>$self->{protocols}, '
-		. 'testing=>$self->{testing}, '
-		. 'prefix=>$self->{prefix}, '
-		. 'name=>$self->{name}, '
-		. 'frontend_obj=>$self, '
-		. '); $backend_obj->init;';
-	eval($init_string);
-	if ($@) {
+	eval {
+		# runtime module load: translate Foo::Bar -> Foo/Bar.pm and require it.
+		# $self->{backend} is already validated /^[a-zA-Z0-9_]+$/ in new, so this path is safe.
+		( my $file = $backend ) =~ s{::}{/}g;
+		require $file . '.pm';
+
+		$backend_obj = $backend->new(
+			options      => $self->{options},
+			ports        => $self->{ports},
+			protocols    => $self->{protocols},
+			testing      => $self->{testing},
+			prefix       => $self->{prefix},
+			name         => $self->{name},
+			frontend_obj => $self,
+		);
+		$backend_obj->init;
+		1;
+	} or do {
 		$self->{perror}      = 1;
 		$self->{error}       = 12;
 		$self->{errorString} = 'Failed to init backend... ' . $@;
 		$self->warn;
-	}
+	};
 	# make sure we got something that is defined and is a object of some sort
 	if ( !defined($backend_obj) ) {
 		$self->{perror}      = 1;
@@ -334,6 +354,39 @@ sub init_backend {
 
 	$self->{backend_obj} = $backend_obj;
 } ## end sub init_backend
+
+=head2 _self_heal
+
+Internal helper. If self healing is enabled and the backend is inited, ask
+the backend to check that its firewall setup is still present and re_init it
+if it is not. This is the fail2ban actioncheck-before-action behavior. Both
+the check and re_init are best effort; any failure is left for the following
+ban/unban to surface.
+
+Honors a per-call C<self_heal> override passed via C<%opts>.
+
+=cut
+
+sub _self_heal {
+	my ( $self, %opts ) = @_;
+
+	my $heal = $self->{self_heal};
+	$heal = ( $opts{self_heal} ? 1 : 0 ) if ( exists( $opts{self_heal} ) );
+
+	if (   $heal
+		&& defined( $self->{backend_obj} )
+		&& $self->{backend_obj}->{inited} )
+	{
+		my $healthy;
+		eval { $healthy = $self->{backend_obj}->check; };
+		if ( !$@ && !$healthy ) {
+			# the setup was removed externally, rebuild it and re-add the bans
+			eval { $self->{backend_obj}->re_init; };
+		}
+	}
+
+	return;
+} ## end sub _self_heal
 
 =head2 ban
 
@@ -367,6 +420,18 @@ sub ban {
 		$self->warn;
 		return;
 	}
+
+	if ( !defined( $self->{backend_obj} ) ) {
+		$self->{error}       = 13;
+		$self->{errorString} = 'No backend object present... init_backend has not been called';
+		$self->warn;
+		return;
+	}
+
+	# lowercase so the same IPv6 IP in differing cases can't result in duplicate entries
+	$opts{ban} = lc( $opts{ban} );
+
+	$self->_self_heal(%opts);
 
 	eval { $self->{backend_obj}->ban( ban => $opts{ban} ); };
 	if ($@) {
@@ -410,6 +475,18 @@ sub unban {
 		return;
 	}
 
+	if ( !defined( $self->{backend_obj} ) ) {
+		$self->{error}       = 14;
+		$self->{errorString} = 'No backend object present... init_backend has not been called';
+		$self->warn;
+		return;
+	}
+
+	# lowercase so the same IPv6 IP in differing cases can't result in duplicate entries
+	$opts{ban} = lc( $opts{ban} );
+
+	$self->_self_heal(%opts);
+
 	eval { $self->{backend_obj}->unban( ban => $opts{ban} ); };
 	if ($@) {
 		$self->{error}       = 14;
@@ -432,6 +509,13 @@ sub list {
 
 	$self->errorblank;
 	$self->{test_data}=undef;
+
+	if ( !defined( $self->{backend_obj} ) ) {
+		$self->{error}       = 15;
+		$self->{errorString} = 'No backend object present... init_backend has not been called';
+		$self->warn;
+		return;
+	}
 
 	my @banned;
 	eval { @banned = $self->{backend_obj}->list; };
@@ -457,6 +541,13 @@ sub re_init {
 	$self->errorblank;
 	$self->{test_data}=undef;
 
+	if ( !defined( $self->{backend_obj} ) ) {
+		$self->{error}       = 16;
+		$self->{errorString} = 'No backend object present... init_backend has not been called';
+		$self->warn;
+		return;
+	}
+
 	eval { $self->{backend_obj}->re_init; };
 	if ($@) {
 		$self->{error}       = 16;
@@ -478,6 +569,13 @@ sub teardown {
 	$self->errorblank;
 	$self->{test_data}=undef;
 
+	if ( !defined( $self->{backend_obj} ) ) {
+		$self->{error}       = 17;
+		$self->{errorString} = 'No backend object present... init_backend has not been called';
+		$self->warn;
+		return;
+	}
+
 	eval { $self->{backend_obj}->teardown; };
 	if ($@) {
 		$self->{error}       = 17;
@@ -486,6 +584,93 @@ sub teardown {
 		return;
 	}
 } ## end sub teardown
+
+=head2 stop
+
+Alias for L</teardown>, provided for parity with the fail2ban C<actionstop>
+concept.
+
+    $fw_helper->stop;
+
+=cut
+
+sub stop {
+	my ( $self, %opts ) = @_;
+
+	return $self->teardown(%opts);
+}
+
+=head2 check
+
+Asks the backend to verify that its firewall setup is still intact. This is
+the equivalent of fail2ban's C<actioncheck>. Returns a true value if the
+setup is present and a false value if it appears to have been removed (in
+which case a L</re_init> is warranted). On an internal error it sets the
+error and returns undef.
+
+    if ( !$fw_helper->check ) {
+        $fw_helper->re_init;
+    }
+
+=cut
+
+sub check {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+	$self->{test_data} = undef;
+
+	if ( !defined( $self->{backend_obj} ) ) {
+		$self->{error}       = 24;
+		$self->{errorString} = 'No backend object present... init_backend has not been called';
+		$self->warn;
+		return;
+	}
+
+	my $healthy;
+	eval { $healthy = $self->{backend_obj}->check; };
+	if ($@) {
+		$self->{error}       = 24;
+		$self->{errorString} = 'backend check failed... ' . $@;
+		$self->warn;
+		return;
+	}
+
+	return $healthy;
+} ## end sub check
+
+=head2 flush
+
+Removes all currently banned IPs at once while leaving the firewall rules in
+place. This is the equivalent of fail2ban's C<actionflush>. Unlike
+L</teardown>, the blocking rules remain active, so new bans work without a
+L</re_init>.
+
+    $fw_helper->flush;
+
+=cut
+
+sub flush {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+	$self->{test_data} = undef;
+
+	if ( !defined( $self->{backend_obj} ) ) {
+		$self->{error}       = 25;
+		$self->{errorString} = 'No backend object present... init_backend has not been called';
+		$self->warn;
+		return;
+	}
+
+	eval { $self->{backend_obj}->flush; };
+	if ($@) {
+		$self->{error}       = 25;
+		$self->{errorString} = 'backend flush failed... ' . $@;
+		$self->warn;
+		return;
+	}
+} ## end sub flush
 
 =head1 ERROR CODES / FLAGS
 
@@ -498,7 +683,7 @@ No backend was specified to use.
 
 =head2 2, invalidPortSpecified
 
-Port is either not a positive int or a name that can be resolved by getservbyname.
+Port is either not an int within the range 1 to 65535 or a name that can be resolved by getservbyname.
 
 =head2 3, portsNotArray
 
@@ -510,7 +695,7 @@ The data passed to new for protocols is not an array.
 
 =head2 5, invalidPortSpecified
 
-Port is either not a positive int or a name that can be resolved by getservbyname.
+Port is either not an int within the range 1 to 65535 or a name that can be resolved by getservbyname.
 
 =head2 6, invalidPrefixSpecified
 
@@ -561,6 +746,14 @@ Failed to re_init the backend.
 =head2 17, teardownFailed
 
 Failed to teardown the backend.
+
+=head2 24, checkFailed
+
+The backend check raised an error.
+
+=head2 25, flushFailed
+
+Failed to flush the bans.
 
 =head1 AUTHOR
 

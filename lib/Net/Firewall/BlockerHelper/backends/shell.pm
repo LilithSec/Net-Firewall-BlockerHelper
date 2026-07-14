@@ -13,11 +13,11 @@ Net::Firewall::BlockerHelper::backends::shell - A shell backend for Net::Firewal
 
 =head1 VERSION
 
-Version 0.0.1
+Version 0.1.0
 
 =cut
 
-our $VERSION = '0.0.1';
+our $VERSION = '0.1.0';
 
 =head1 SYNOPSIS
 
@@ -82,6 +82,15 @@ The values used for options is as below. All must be defined and can't be ''.
     - unban :: The command to run to un ban a IP. %%%BAN%%% is replaced with the IP.
          Default :: undef
 
+    - check :: Optional command to run to verify the blocking is still in place.
+         A zero exit is treated as healthy. If not defined, check always
+         reports healthy.
+         Default :: undef
+
+    - flush :: Optional command to run to remove all bans at once. If not
+         defined, flush falls back to unbanning each currently banned IP.
+         Default :: undef
+
 All errors are considered fatal, meaning if new fails it will die.
 
     my $fw_helper;
@@ -119,6 +128,9 @@ sub new {
 		errorString   => "",
 		errorExtra    => {
 			all_errors_fatal => 1,
+			# all_fatal is what Error::Helper 2.1.0 actually checks; all_errors_fatal
+			# is kept for the name documented in its POD
+			all_fatal        => 1,
 			flags            => {
 				1  => 'notInited',
 				2  => 'initInvalid',
@@ -136,6 +148,8 @@ sub new {
 				16 => 'reInitFailed',
 				17 => 'teardownFailed',
 				18 => 'alreadyInited',
+				24 => 'checkFailed',
+				25 => 'flushFailed',
 			},
 			fatal_flags      => {},
 			perror_not_fatal => 0,
@@ -147,7 +161,6 @@ sub new {
 		testing      => undef,
 		test_data    => undef,
 		prefix       => 'kur',
-		postfix      => undef,
 		frontend_obj => undef,
 		inited       => 0,
 		banned       => {},
@@ -298,6 +311,9 @@ sub ban {
 		return;
 	}
 
+	# lowercase so the same IPv6 IP in differing cases can't result in duplicate entries
+	$opts{ban} = lc( $opts{ban} );
+
 	my $command = $self->{options}{ban};
 	$command =~ s/\%\%\%BAN\%\%\%/$opts{ban}/g;
 
@@ -354,6 +370,9 @@ sub unban {
 		return;
 	}
 
+	# lowercase so the same IPv6 IP in differing cases can't result in duplicate entries
+	$opts{ban} = lc( $opts{ban} );
+
 	my $command = $self->{options}{unban};
 	$command =~ s/\%\%\%BAN\%\%\%/$opts{ban}/g;
 
@@ -409,7 +428,12 @@ sub re_init {
 		return;
 	}
 
-	$self->teardown;
+	# teardown is best effort here as a partially or fully wiped setup is
+	# exactly what re_init needs to recover from; init cleans up any remnants
+	{
+		local $@;
+		eval { $self->teardown; };
+	}
 	$self->init;
 
 	my @to_re_ban = keys( %{ $self->{banned} } );
@@ -444,9 +468,9 @@ Tears down the setup for the backend.
 sub teardown {
 	my ( $self, %opts ) = @_;
 
-	$self->{inited} = 0;
-
 	$self->errorblank;
+
+	$self->{inited} = 0;
 
 	my $command = $self->{options}{teardown};
 
@@ -460,9 +484,104 @@ sub teardown {
 			$self->warn;
 		}
 	}
-
-	$self->{inited} = 0;
 } ## end sub teardown
+
+=head2 stop
+
+Alias for L</teardown>, provided for parity with the fail2ban C<actionstop>
+concept.
+
+    $fw_helper->stop;
+
+=cut
+
+sub stop {
+	my ( $self, %opts ) = @_;
+
+	return $self->teardown(%opts);
+}
+
+=head2 check
+
+Runs the optional C<check> command from the options hash. A zero exit code
+is treated as healthy. If no C<check> command was configured, this always
+reports healthy. This is the equivalent of fail2ban's C<actioncheck>.
+
+    if ( !$fw_helper->check ) {
+        $fw_helper->re_init;
+    }
+
+=cut
+
+sub check {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	# no check command configured -> assume healthy
+	if ( !defined( $self->{options}{check} ) || $self->{options}{check} eq '' ) {
+		if ( $self->{testing} ) {
+			$self->{frontend_obj}->{test_data} = 'check';
+		}
+		return 1;
+	}
+
+	my $command = $self->{options}{check};
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = $command;
+		return 1;
+	}
+
+	my $output = `$command 2>&1`;
+	return $? == 0 ? 1 : 0;
+} ## end sub check
+
+=head2 flush
+
+Removes all currently banned IPs at once. If a C<flush> command was
+configured in the options hash it is run; otherwise it falls back to
+unbanning each currently banned IP. This is the equivalent of fail2ban's
+C<actionflush>.
+
+    $fw_helper->flush;
+
+=cut
+
+sub flush {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( !$self->{inited} ) {
+		$self->{error}       = 1;
+		$self->{errorString} = 'backend has not been inited';
+		$self->warn;
+		return;
+	}
+
+	if ( defined( $self->{options}{flush} ) && $self->{options}{flush} ne '' ) {
+		my $command = $self->{options}{flush};
+
+		if ( $self->{testing} ) {
+			$self->{frontend_obj}->{test_data} = $command;
+		} else {
+			my $output = `$command 2>&1`;
+			if ( $? != 0 ) {
+				$self->{error}       = 25;
+				$self->{errorString} = 'Flush failed... command "' . $command . '" resulted in... ' . $output;
+				$self->warn;
+			}
+		}
+
+		$self->{banned} = {};
+	} else {
+		# no bulk flush command configured -> unban each currently banned IP
+		foreach my $item ( keys( %{ $self->{banned} } ) ) {
+			$self->unban( ban => $item );
+		}
+	}
+} ## end sub flush
 
 =head1 ERROR CODES / FLAGS
 
@@ -535,6 +654,14 @@ Failed to teardown the backend.
 =head2 18, alreadyInited
 
 Backend has already been initiated.
+
+=head2 24, checkFailed
+
+The backend check raised an error.
+
+=head2 25, flushFailed
+
+Failed to flush the bans.
 
 =head1 AUTHOR
 

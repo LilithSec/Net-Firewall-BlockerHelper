@@ -1,0 +1,874 @@
+package Net::Firewall::BlockerHelper::backends::ufw;
+
+use 5.006;
+use strict;
+use warnings;
+use base 'Error::Helper';
+use Regexp::IPv4 qw($IPv4_re);
+use Regexp::IPv6 qw($IPv6_re);
+
+=head1 NAME
+
+Net::Firewall::BlockerHelper::backends::ufw - ufw backend for Net::Firewall::BlockerHelper.
+
+=head1 VERSION
+
+Version 0.1.0
+
+=cut
+
+our $VERSION = '0.1.0';
+
+=head1 SYNOPSIS
+
+    use Net::Firewall::BlockerHelper;
+
+    my $fw_helper = Net::Firewall::BlockerHelper->new(
+            backend => 'ufw',
+            ports => ['22'],
+            protocols => ['tcp'],
+            name => 'ssh',
+        );
+
+    $fw_helper->init_backend;
+    $fw_helper->ban(ban => '1.2.3.4');
+    $fw_helper->unban(ban => '1.2.3.4');
+    $fw_helper->teardown;
+
+=head1 DESCRIPTION
+
+Blocks IPs using L<ufw(8)>, the uncomplicated firewall front end common on
+Ubuntu.
+
+Unlike the table/set based backends there is no container to create; each
+ban prepends one or more per-IP rules (one per protocol) and each unban
+deletes them again. teardown removes the rules for all currently banned IPs
+without forgetting them, so re_init can re-add them.
+
+ufw must already be enabled (C<ufw enable>); init and check verify this via
+C<ufw status>. Requires C<ufw> to be in the C<PATH> of the process, which
+must have sufficient privileges to run it.
+
+=head1 METHODS
+
+=head2 new
+
+Initiates the the object.
+
+    - options :: Backend specific options that will be passed to the backend unchecked
+            outside of making sure it is a hash ref if defined. See below for furhter info.
+        - Default :: {}
+
+    - ports :: A array of ports to block. Checked to make sure they are ints within the
+            range 1 to 65535 or a valid service name via getservbyname. All ports will be
+            blocked if non are specified. Duplicates are removed.
+        - Default :: []
+
+    - protocols :: A array of protocols to block. This is checked against
+            /etc/protocols via the function getprotobyname and against the
+            protocols understood by ufw (tcp, udp, ah, esp, gre, igmp, and
+            ipv6). Duplicates will be discarded. If no protocols are given,
+            everything from the IP is blocked, unless ports are given, in
+            which case it defaults to tcp and udp. Ports are only attached to
+            tcp and udp; other protocols are blocked without a port.
+        - Default :: [], or ['tcp','udp'] when ports are given
+
+    - prefix :: Prefix to use. Must match the regex /^[a-zA-Z0-9]+$/
+        - default :: kur
+
+    - name :: Name of this specific instance. This must be specified.
+        - default :: undef
+
+The options hash accepts the following.
+
+    - type :: The drop method to use. 'deny' silently drops. 'reject' sends
+            a reject back. See ufw(8).
+        - Default :: deny
+
+    - kill :: Kill existing connections/state for the banned IP. '' does
+            nothing, 'ss' uses ss -K, and 'conntrack' uses conntrack -D. Both
+            handle IPv4 and IPv6 and both are scoped to the configured
+            protocols, so blocking only udp will not kill tcp and vice versa;
+            with no protocols configured everything applicable is killed. For
+            ss that means -t/-u/-tu as appropriate (TCP connections and
+            connected UDP sockets are what ss can kill) and for conntrack -p
+            per blocked protocol.
+        - Default :: ''
+
+All errors are considered fatal, meaning if new fails it will die.
+
+=cut
+
+sub new {
+	my ( $blank, %opts ) = @_;
+
+	my $self = {
+		perror        => undef,
+		error         => undef,
+		errorLine     => undef,
+		errorFilename => undef,
+		errorString   => "",
+		errorExtra    => {
+			all_errors_fatal => 1,
+			# all_fatal is what Error::Helper 2.1.0 actually checks; all_errors_fatal
+			# is kept for the name documented in its POD
+			all_fatal        => 1,
+			flags            => {
+				1  => 'notInited',
+				2  => 'invalidPortSpecified',
+				3  => 'portsNotArray',
+				4  => 'protocolsNotArray',
+				5  => 'invalidProtocolSpecified',
+				6  => 'invalidPrefixSpecified',
+				7  => 'invalidName',
+				8  => 'optionsNotHash',
+				9  => 'noBanItem',
+				10 => 'banItemNotIP',
+				12 => 'backendInitError',
+				13 => 'banFailed',
+				14 => 'unbanFailed',
+				15 => 'listFailed',
+				16 => 'reInitFailed',
+				17 => 'teardownFailed',
+				18 => 'alreadyInited',
+				19 => 'killInvalid',
+				20 => 'typeInvalid',
+				23 => 'initFailed',
+				24 => 'checkFailed',
+				25 => 'flushFailed',
+			},
+			fatal_flags      => {},
+			perror_not_fatal => 0,
+		},
+		options => {
+			type => 'deny',
+			kill => '',
+		},
+		ports        => [],
+		protocols    => [],
+		testing      => undef,
+		test_data    => undef,
+		prefix       => 'kur',
+		frontend_obj => undef,
+		inited       => 0,
+		banned       => {},
+	};
+	bless $self;
+
+	if ( defined( $opts{ports} ) && ref( $opts{ports} ) ne 'ARRAY' ) {
+		$self->{perror}      = 1;
+		$self->{error}       = 3;
+		$self->{errorString} = 'ports is defined and type is not array but "' . ref( $opts{ports} ) . '"';
+		$self->warn;
+	} elsif ( defined( $opts{ports} ) ) {
+		my %ports;
+		foreach my $item ( @{ $opts{ports} } ) {
+			if ( $item =~ /^[0-9]+$/ && $item >= 1 && $item <= 65535 ) {
+				$ports{$item} = 1;
+			} elsif ( $item =~ /^[0-9]+$/ ) {
+				$self->{perror} = 1;
+				$self->{error}  = 2;
+				$self->{errorString}
+					= $item . ' is not a valid value for a port as it must be a int within the range 1 to 65535';
+				$self->warn;
+			} else {
+				# just using tcp here as protocol must be specified
+				my ( $name, $aliases, $port, $proto ) = getservbyname( $item, 'tcp' );
+				if ( !defined($port) ) {
+					$self->{perror} = 1;
+					$self->{error}  = 2;
+					$self->{errorString}
+						= $item . ' could not be resolved to a port name via getservbyname("' . $item . '", "tcp")';
+					$self->warn;
+				}
+				$ports{$port} = 1;
+			} ## end else [ if ( $item =~ /^[0-9]+$/ && $item >= 1 &&...)]
+		} ## end foreach my $item ( @{ $opts{ports} } )
+		my @port_keys = keys(%ports);
+		@port_keys = sort { $a <=> $b } @port_keys;
+		push( @{ $self->{ports} }, @port_keys );
+	} ## end elsif ( defined( $opts{ports} ) )
+
+	# the protocols ufw understands for rules
+	my %ufw_protocols = ( tcp => 1, udp => 1, ah => 1, esp => 1, gre => 1, igmp => 1, ipv6 => 1 );
+
+	if ( defined( $opts{protocols} ) && ref( $opts{protocols} ) ne 'ARRAY' ) {
+		$self->{perror}      = 1;
+		$self->{error}       = 4;
+		$self->{errorString} = 'protocols is defined and type is not array but "' . ref( $opts{protocols} ) . '"';
+		$self->warn;
+	} elsif ( defined( $opts{protocols} ) ) {
+		my %protocols;
+		foreach my $item ( @{ $opts{protocols} } ) {
+			my ( $name, $aliases, $proto ) = getprotobyname($item);
+			# if this is undef, it means it is not a known protocol
+			if ( !defined($proto) ) {
+				$self->{perror} = 1;
+				$self->{error}  = 5;
+				$self->{errorString}
+					= $item . ' could not be resolved to a protocol via getprotobyname("' . $item . '")';
+				$self->warn;
+			}
+			if ( !$ufw_protocols{$item} ) {
+				$self->{perror} = 1;
+				$self->{error}  = 5;
+				$self->{errorString}
+					= $item . ' is not a protocol understood by ufw... understood protocols are tcp, udp, ah, esp, gre, igmp, and ipv6';
+				$self->warn;
+			}
+			$protocols{$item} = 1;
+		} ## end foreach my $item ( @{ $opts{protocols} } )
+		my @protocols_keys = keys(%protocols);
+		@protocols_keys = sort { $a cmp $b } @protocols_keys;
+		push( @{ $self->{protocols} }, @protocols_keys );
+	} ## end elsif ( defined( $opts{protocols} ) )
+
+	# make sure prefix is sane if defiend
+	if ( defined( $opts{prefix} ) && $opts{prefix} !~ /^[a-zA-Z0-9]+$/ ) {
+		$self->{perror} = 1;
+		$self->{error}  = 6;
+		$self->{errorString}
+			= '"' . $opts{prefix} . '" is not a valid prefix as it does not match the regex /^[a-zA-Z0-9]+$/';
+		$self->warn;
+	} elsif ( defined( $opts{prefix} ) ) {
+		$self->{prefix} = $opts{prefix};
+	}
+
+	# make sure we have a name and that it is valid
+	if ( !defined( $opts{name} ) ) {
+		$self->{perror}      = 1;
+		$self->{error}       = 7;
+		$self->{errorString} = 'name is undef';
+		$self->warn;
+	} elsif ( $opts{name} !~ /^[a-zA-Z0-9\-]+$/ ) {
+		$self->{perror}      = 1;
+		$self->{error}       = 7;
+		$self->{errorString} = 'name set to "' . $opts{name} . '" which does not match the regexp  /^[a-zA-Z0-9\-]+$/';
+		$self->warn;
+	}
+	$self->{name} = $opts{name};
+
+	# used internally for testing
+	if ( defined( $opts{testing} ) ) {
+		$self->{testing} = $opts{testing};
+	}
+	if ( defined( $opts{frontend_obj} ) ) {
+		$self->{frontend_obj} = $opts{frontend_obj};
+	}
+
+	if ( defined( $opts{options} ) ) {
+		if ( ref( $opts{options} ) ne 'HASH' ) {
+			$self->{perror}      = 1;
+			$self->{error}       = 8;
+			$self->{errorString} = 'ref for options is "' . ref( $opts{options} ) . '" and not HASH';
+			$self->warn;
+		}
+		$self->{options} = $opts{options};
+
+		if ( defined( $opts{options}{type} ) && ref( $opts{options}{type} ) ne '' ) {
+			$self->{perror}      = 1;
+			$self->{error}       = 20;
+			$self->{errorString} = 'ref for $opts{options}{type} is "' . ref( $opts{options}{type} ) . '" and not ""';
+			$self->warn;
+		} elsif ( defined( $opts{options}{type} )
+			&& $opts{options}{type} ne 'deny'
+			&& $opts{options}{type} ne 'reject' )
+		{
+			$self->{perror} = 1;
+			$self->{error}  = 20;
+			$self->{errorString}
+				= '$opts{options}{type} is "' . $opts{options}{type} . '" and not "deny" or "reject"';
+			$self->warn;
+		} elsif ( !defined( $opts{options}{type} ) ) {
+			$self->{options}{type} = 'deny';
+		}
+
+		if ( defined( $opts{options}{kill} )
+			&& $opts{options}{kill} ne ''
+			&& $opts{options}{kill} ne 'ss'
+			&& $opts{options}{kill} ne 'conntrack' )
+		{
+			$self->{perror} = 1;
+			$self->{error}  = 19;
+			$self->{errorString}
+				= '$opts{options}{kill} is "' . $opts{options}{kill} . '" and not "", "ss", or "conntrack"';
+			$self->warn;
+		} elsif ( !defined( $opts{options}{kill} ) ) {
+			$self->{options}{kill} = '';
+		}
+	} ## end if ( defined( $opts{options} ) )
+
+	return $self;
+} ## end sub new
+
+=head2 _rule_specs
+
+Internal helper. Returns the list of ufw rule specifications (the part
+after deny/reject) for the passed IP, based on the configured protocols and
+ports.
+
+=cut
+
+sub _rule_specs {
+	my ( $self, $ip ) = @_;
+
+	my @ports    = @{ $self->{ports} };
+	my @protos   = @{ $self->{protocols} };
+	my $port_str = join( ',', @ports );
+
+	# protocols that accept a port specification under ufw
+	my %port_ok = ( tcp => 1, udp => 1 );
+
+	my @specs;
+	if ( !@protos && !@ports ) {
+		# block everything from the IP
+		push( @specs, 'from ' . $ip . ' to any' );
+	} elsif ( !@protos && @ports ) {
+		# ports require a protocol, default to tcp and udp
+		foreach my $proto ( 'tcp', 'udp' ) {
+			push( @specs, 'proto ' . $proto . ' from ' . $ip . ' to any port ' . $port_str );
+		}
+	} else {
+		foreach my $proto (@protos) {
+			if ( @ports && $port_ok{$proto} ) {
+				push( @specs, 'proto ' . $proto . ' from ' . $ip . ' to any port ' . $port_str );
+			} else {
+				push( @specs, 'proto ' . $proto . ' from ' . $ip . ' to any' );
+			}
+		}
+	} ## end else [ if ( !@protos && !@ports ) ]
+
+	return @specs;
+} ## end sub _rule_specs
+
+=head2 _kill_commands
+
+Internal helper. Returns the commands used to kill existing
+connections/state for the passed IP, per the configured kill mode. The kill
+is scoped to the configured protocols so protocols that are not being
+blocked are left alone.
+
+=cut
+
+sub _kill_commands {
+	my ( $self, $ip ) = @_;
+
+	my @protos = @{ $self->{protocols} };
+	if ( !@protos && defined( $self->{ports}[0] ) ) {
+		# ports without protocols means tcp and udp are being blocked
+		@protos = ( 'tcp', 'udp' );
+	}
+
+	if ( $self->{options}{kill} eq 'ss' ) {
+		# scope to -t/-u per the blocked protocols; ss can only kill TCP
+		# connections and connected UDP sockets, so if neither is being
+		# blocked there is nothing applicable to kill
+		my $flags = '-tu';
+		if (@protos) {
+			my $tcp = grep { $_ eq 'tcp' } @protos;
+			my $udp = grep { $_ eq 'udp' } @protos;
+			if ( $tcp && $udp ) {
+				$flags = '-tu';
+			} elsif ($tcp) {
+				$flags = '-t';
+			} elsif ($udp) {
+				$flags = '-u';
+			} else {
+				return ();
+			}
+		} ## end if (@protos)
+		return ( 'ss -K ' . $flags . ' dst "[' . $ip . ']"' );
+	} ## end if ( $self->{options}{kill} eq 'ss' )
+
+	# conntrack defaults to IPv4, so IPv6 IPs need the family specified
+	my $is_v4  = ( $ip =~ /\A$IPv4_re\z/ ) ? 1 : 0;
+	my $family = $is_v4 ? '' : '-f ipv6 ';
+
+	# nothing configured means everything is being blocked, so drop every
+	# entry for the IP
+	if ( !@protos ) {
+		return ( 'conntrack ' . $family . '-D -s ' . $ip );
+	}
+
+	# scope the kill to the blocked protocols; ones conntrack can not filter
+	# by are skipped
+	my %conntrack_protos = ( tcp => 'tcp', udp => 'udp', gre => 'gre' );
+
+	my @commands;
+	foreach my $proto (@protos) {
+		my $conntrack_proto = $conntrack_protos{$proto};
+		next if ( !defined($conntrack_proto) );
+		push( @commands, 'conntrack ' . $family . '-D -p ' . $conntrack_proto . ' -s ' . $ip );
+	}
+
+	return @commands;
+} ## end sub _kill_commands
+
+=head2 _status_command
+
+Internal helper. Returns the command used to verify ufw is enabled.
+
+=cut
+
+sub _status_command {
+	my ($self) = @_;
+
+	return 'ufw status | grep -qiE "^Status:[[:space:]]*active"';
+}
+
+=head2 init
+
+Initiates the backend. As there is no container to create, this just
+verifies that ufw is enabled.
+
+    $backend->init;
+
+=cut
+
+sub init {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( $self->{inited} ) {
+		$self->{error}       = 18;
+		$self->{errorString} = 'backend has already been inited';
+		$self->warn;
+	}
+
+	my @commands = ( $self->_status_command );
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = { commands => \@commands };
+	} else {
+		foreach my $item (@commands) {
+			my $output = `$item 2>&1`;
+			if ( $? != 0 ) {
+				$self->{error} = 23;
+				$self->{errorString}
+					= 'init failed. ufw does not appear to be enabled... the command "'
+					. $item
+					. '" exited non-zero... output... '
+					. $output;
+				$self->warn;
+			}
+		}
+	} ## end else [ if ( $self->{testing} ) ]
+
+	$self->{inited} = 1;
+} ## end sub init
+
+=head2 ban
+
+Bans the IP.
+
+    $backend->ban(ban => $ip);
+
+=cut
+
+sub ban {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( !$self->{inited} ) {
+		$self->{error}       = 1;
+		$self->{errorString} = 'backend has not been inited';
+		$self->warn;
+		return;
+	}
+
+	if ( !defined( $opts{ban} ) ) {
+		$self->{error}       = 9;
+		$self->{errorString} = 'Nothing specified for the value ban';
+		$self->warn;
+		return;
+	} elsif ( ref( $opts{ban} ) ne '' ) {
+		$self->{error}       = 10;
+		$self->{errorString} = 'Bad ref type for ban... ref is "' . ref( $opts{ban} ) . '"';
+		$self->warn;
+		return;
+	} elsif ( $opts{ban} !~ /\A$IPv4_re\z/
+		&& $opts{ban} !~ /\A$IPv6_re\z/ )
+	{
+		$self->{error}       = 10;
+		$self->{errorString} = 'ban item,"' . $opts{ban} . '", does not appear to be a IPv4 or IPv6 IP';
+		$self->warn;
+		return;
+	}
+
+	# lowercase so the same IPv6 IP in differing cases can't result in duplicate entries
+	$opts{ban} = lc( $opts{ban} );
+
+	if ( $self->{banned}{ $opts{ban} } ) {
+		if ( $self->{testing} ) {
+			$self->{frontend_obj}->{test_data} = 'already banned';
+		}
+		return;
+	}
+
+	my @commands;
+	foreach my $spec ( $self->_rule_specs( $opts{ban} ) ) {
+		push( @commands, 'ufw prepend ' . $self->{options}{type} . ' ' . $spec );
+	}
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = \@commands;
+	} else {
+		foreach my $item (@commands) {
+			my $output = `$item 2>&1`;
+			if ( $? != 0 ) {
+				$self->{error} = 13;
+				$self->{errorString}
+					= 'ban failed. non-zero exit code for the command... "' . $item . '"... output... ' . $output;
+				$self->warn;
+			}
+		}
+	} ## end else [ if ( $self->{testing} ) ]
+
+	if ( $self->{options}{kill} ) {
+		foreach my $kill_command ( $self->_kill_commands( $opts{ban} ) ) {
+			if ( $self->{testing} ) {
+				push( @{ $self->{frontend_obj}->{test_data} }, $kill_command );
+			} else {
+				# best effort; exit codes are intentionally ignored as both
+				# commands exit non-zero when there is nothing matching to kill
+				my $output = `$kill_command 2>&1`;
+			}
+		}
+	} ## end if ( $self->{options}{kill} )
+
+	$self->{banned}{ $opts{ban} } = 1;
+} ## end sub ban
+
+=head2 unban
+
+Unbans the IP.
+
+    $backend->unban(ban => $ip);
+
+=cut
+
+sub unban {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( !$self->{inited} ) {
+		$self->{error}       = 1;
+		$self->{errorString} = 'backend has not been inited';
+		$self->warn;
+		return;
+	}
+
+	if ( !defined( $opts{ban} ) ) {
+		$self->{error}       = 9;
+		$self->{errorString} = 'Nothing specified for the value ban';
+		$self->warn;
+		return;
+	} elsif ( ref( $opts{ban} ) ne '' ) {
+		$self->{error}       = 10;
+		$self->{errorString} = 'Bad ref type for ban... ref is "' . ref( $opts{ban} ) . '"';
+		$self->warn;
+		return;
+	} elsif ( $opts{ban} !~ /\A$IPv4_re\z/
+		&& $opts{ban} !~ /\A$IPv6_re\z/ )
+	{
+		$self->{error}       = 10;
+		$self->{errorString} = 'ban item,"' . $opts{ban} . '", does not appear to be a IPv4 or IPv6 IP';
+		$self->warn;
+		return;
+	}
+
+	# lowercase so the same IPv6 IP in differing cases can't result in duplicate entries
+	$opts{ban} = lc( $opts{ban} );
+
+	if ( !$self->{banned}{ $opts{ban} } ) {
+		if ( $self->{testing} ) {
+			$self->{frontend_obj}->{test_data} = 'not banned';
+		}
+		return;
+	}
+
+	my @commands;
+	foreach my $spec ( $self->_rule_specs( $opts{ban} ) ) {
+		push( @commands, 'ufw delete ' . $self->{options}{type} . ' ' . $spec );
+	}
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = \@commands;
+	} else {
+		foreach my $item (@commands) {
+			my $output = `$item 2>&1`;
+			if ( $? != 0 ) {
+				$self->{error} = 14;
+				$self->{errorString}
+					= 'unban failed. non-zero exit code for the command... "' . $item . '"... output... ' . $output;
+				$self->warn;
+			}
+		}
+	} ## end else [ if ( $self->{testing} ) ]
+
+	delete( $self->{banned}{ $opts{ban} } );
+} ## end sub unban
+
+=head2 list
+
+List banned IPs.
+
+    my @banned = $backend->list;
+
+=cut
+
+sub list {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = 'list';
+	}
+
+	return keys( %{ $self->{banned} } );
+}
+
+=head2 re_init
+
+Tells the backend to re-init it's self.
+
+This will call teardown and init again. After that it will
+re-added all previously added bans.
+
+    $backend->re_init;
+
+=cut
+
+sub re_init {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( !$self->{inited} ) {
+		$self->{error}       = 1;
+		$self->{errorString} = 'backend has not been inited';
+		$self->warn;
+		return;
+	}
+
+	# teardown is best effort here as a partially or fully wiped setup is
+	# exactly what re_init needs to recover from; init cleans up any remnants
+	{
+		local $@;
+		eval { $self->teardown; };
+	}
+	$self->init;
+
+	my @to_ban = keys( %{ $self->{banned} } );
+
+	my @re_init_test_data;
+	foreach my $item (@to_ban) {
+		foreach my $spec ( $self->_rule_specs($item) ) {
+			my $command = 'ufw prepend ' . $self->{options}{type} . ' ' . $spec;
+
+			if ( $self->{testing} ) {
+				push( @re_init_test_data, $command );
+			} else {
+				my $output = `$command 2>&1`;
+				if ( $? != 0 ) {
+					$self->{error} = 13;
+					$self->{errorString}
+						= 'ban failed. non-zero exit code for the command... "' . $command . '"... output... ' . $output;
+					$self->warn;
+				}
+			}
+		} ## end foreach my $spec ( $self->_rule_specs($item) )
+	} ## end foreach my $item (@to_ban)
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = \@re_init_test_data;
+	}
+
+	$self->{inited} = 1;
+} ## end sub re_init
+
+=head2 teardown
+
+Tears down the setup for the backend by deleting the rules for all currently
+banned IPs. The internal list of bans is kept, so a following re_init will
+re-add them.
+
+    $backend->teardown;
+
+=cut
+
+sub teardown {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	$self->{inited} = 0;
+
+	my @commands;
+	foreach my $item ( keys( %{ $self->{banned} } ) ) {
+		foreach my $spec ( $self->_rule_specs($item) ) {
+			push( @commands, 'ufw delete ' . $self->{options}{type} . ' ' . $spec );
+		}
+	}
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = \@commands;
+	} else {
+		foreach my $item (@commands) {
+			my $output = `$item 2>&1`;
+			if ( $? != 0 ) {
+				$self->{error} = 17;
+				$self->{errorString}
+					= 'teardown failed. non-zero exit code for the command... "' . $item . '"... output... ' . $output;
+				$self->warn;
+			}
+		}
+	} ## end else [ if ( $self->{testing} ) ]
+} ## end sub teardown
+
+=head2 stop
+
+Alias for L</teardown>, provided for parity with the fail2ban C<actionstop>
+concept.
+
+    $backend->stop;
+
+=cut
+
+sub stop {
+	my ( $self, %opts ) = @_;
+
+	return $self->teardown(%opts);
+}
+
+=head2 check
+
+Verifies that ufw is still enabled. Returns a true value if it is and a
+false value otherwise. This is the equivalent of fail2ban's C<actioncheck>.
+
+    if ( !$backend->check ) {
+        $backend->re_init;
+    }
+
+=cut
+
+sub check {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	my @commands = ( $self->_status_command );
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = \@commands;
+		return 1;
+	}
+
+	foreach my $item (@commands) {
+		my $output = `$item 2>&1`;
+		if ( $? != 0 ) {
+			return 0;
+		}
+	}
+
+	return 1;
+} ## end sub check
+
+=head2 flush
+
+Removes all currently banned IPs at once by deleting their rules and
+forgetting them. This is the equivalent of fail2ban's C<actionflush>.
+
+    $backend->flush;
+
+=cut
+
+sub flush {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( !$self->{inited} ) {
+		$self->{error}       = 1;
+		$self->{errorString} = 'backend has not been inited';
+		$self->warn;
+		return;
+	}
+
+	my @commands;
+	foreach my $item ( keys( %{ $self->{banned} } ) ) {
+		foreach my $spec ( $self->_rule_specs($item) ) {
+			push( @commands, 'ufw delete ' . $self->{options}{type} . ' ' . $spec );
+		}
+	}
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = \@commands;
+	} else {
+		foreach my $item (@commands) {
+			my $output = `$item 2>&1`;
+			if ( $? != 0 ) {
+				$self->{error} = 25;
+				$self->{errorString}
+					= 'flush failed. non-zero exit code for the command... "' . $item . '"... output... ' . $output;
+				$self->warn;
+			}
+		}
+	} ## end else [ if ( $self->{testing} ) ]
+
+	$self->{banned} = {};
+} ## end sub flush
+
+=head1 ERROR CODES / FLAGS
+
+Error handling is provided by L<Error::Helper>. All errors are considered
+fatal.
+
+    1  notInited
+    2  invalidPortSpecified
+    3  portsNotArray
+    4  protocolsNotArray
+    5  invalidProtocolSpecified
+    6  invalidPrefixSpecified
+    7  invalidName
+    8  optionsNotHash
+    9  noBanItem
+    10 banItemNotIP
+    12 backendInitError
+    13 banFailed
+    14 unbanFailed
+    15 listFailed
+    16 reInitFailed
+    17 teardownFailed
+    18 alreadyInited
+    19 killInvalid
+    20 typeInvalid
+    23 initFailed
+    24 checkFailed
+    25 flushFailed
+
+=head1 AUTHOR
+
+Zane C. Bowers-Hadley, C<< <vvelox at vvelox.ent> >>
+
+=head1 BUGS
+
+Please report any bugs or feature requests to C<bug-net-firewall-blockerhelper at rt.cpan.org>, or through
+the web interface at L<https://rt.cpan.org/NoAuth/ReportBug.html?Queue=Net-Firewall-BlockerHelper>.
+
+=head1 LICENSE AND COPYRIGHT
+
+This software is Copyright (c) 2023 by Zane C. Bowers-Hadley.
+
+This is free software, licensed under:
+
+  The GNU Lesser General Public License, Version 2.1, February 1999
+
+
+=cut
+
+1;    # End of Net::Firewall::BlockerHelper

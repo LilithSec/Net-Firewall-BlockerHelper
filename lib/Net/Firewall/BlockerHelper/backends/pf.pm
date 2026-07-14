@@ -13,11 +13,11 @@ Net::Firewall::BlockerHelper::backends::pf - pf backend for Net::Firewall::Block
 
 =head1 VERSION
 
-Version 0.0.1
+Version 0.1.0
 
 =cut
 
-our $VERSION = '0.0.1';
+our $VERSION = '0.1.0';
 
 =head1 SYNOPSIS
 
@@ -92,10 +92,13 @@ Initiates the the object.
             duplicates are removed.
         - Default :: []
 
-    - protocols :: A array of protocols to block. By default will block all. This
-            is checked against /etc/protocols via the function getprotobyname. Duplicates
-            will be discarded.
-        - Default :: []
+    - protocols :: A array of protocols to block. This is checked against
+            /etc/protocols via the function getprotobyname. Duplicates will be
+            discarded. If no protocols are given, tcp, udp, icmp, and icmp6 are
+            blocked, unless ports are given, in which case it defaults to tcp
+            and udp. Ports are only attached to port-capable protocols
+            (tcp/udp/sctp); other protocols are blocked without a port.
+        - Default :: ['tcp','udp','icmp','icmp6'], or ['tcp','udp'] when ports are given
 
     - prefix :: Prefix to use. Must match the regex /^[a-zA-Z0-9]+$/
         - default :: kur
@@ -105,7 +108,16 @@ Initiates the the object.
 
 The options hash accepts the following.
 
-    - kill :: If it should kill connections to the banned IP or not.
+    - kill :: If it should kill states for the banned IP or not. Handles
+            both IPv4 and IPv6 and is scoped to what is being blocked. With
+            protocols and/or ports configured the state table is searched and
+            matching states killed by ID, filtered to the blocked protocols
+            and ports (pf keeps state for UDP as well, so blocking only udp
+            kills only udp states and leaves tcp alone); the state matching
+            follows the family of the banned IP as pf prints IPv4 states as
+            addr:port and IPv6 ones as addr[port]. With nothing configured
+            everything is being blocked and pfctl -k is used, killing all
+            states for the IP.
         - Default :: 0
 
 All errors are considered fatal, meaning if new fails it will die.
@@ -141,6 +153,9 @@ sub new {
 		errorString   => "",
 		errorExtra    => {
 			all_errors_fatal => 1,
+			# all_fatal is what Error::Helper 2.1.0 actually checks; all_errors_fatal
+			# is kept for the name documented in its POD
+			all_fatal        => 1,
 			flags            => {
 				1  => 'notInited',
 				2  => 'invalidPortSpecified',
@@ -160,7 +175,10 @@ sub new {
 				16 => 'reInitFailed',
 				17 => 'teardownFailed',
 				18 => 'alreadyInited',
+				19 => 'nameTooLong',
 				23 => 'initFailed',
+				24 => 'checkFailed',
+				25 => 'flushFailed',
 			},
 			fatal_flags      => {},
 			perror_not_fatal => 0,
@@ -173,7 +191,6 @@ sub new {
 		testing      => undef,
 		test_data    => undef,
 		prefix       => 'kur',
-		postfix      => undef,
 		frontend_obj => undef,
 		inited       => 0,
 		banned       => {},
@@ -188,13 +205,13 @@ sub new {
 	} elsif ( defined( $opts{ports} ) ) {
 		my %ports;
 		foreach my $item ( @{ $opts{ports} } ) {
-			if ( $item =~ /^[0-9]+$/ && $item >= 1 ) {
+			if ( $item =~ /^[0-9]+$/ && $item >= 1 && $item <= 65535 ) {
 				$ports{$item} = 1;
-			} elsif ( $item =~ /^[0-9]+$/ && $item < 1 ) {
+			} elsif ( $item =~ /^[0-9]+$/ ) {
 				$self->{perror} = 1;
 				$self->{error}  = 2;
 				$self->{errorString}
-					= $item . ' is not a valid value for a port as it must be a int greater or equal to 1';
+					= $item . ' is not a valid value for a port as it must be a int within the range 1 to 65535';
 				$self->warn;
 			} else {
 				# just using tcp here as protocol must be specified
@@ -263,6 +280,20 @@ sub new {
 	}
 	$self->{name} = $opts{name};
 
+	# pf limits table names to 31 characters and the table is
+	# <prefix>_<name>, so catch over-long combos here rather than as a
+	# confusing error at init
+	if ( defined( $self->{name} ) && length( $self->{prefix} . '_' . $self->{name} ) > 31 ) {
+		$self->{perror} = 1;
+		$self->{error}  = 19;
+		$self->{errorString}
+			= 'the combined prefix and name, "'
+			. $self->{prefix} . '_'
+			. $self->{name}
+			. '", is longer than 31 characters, the max pf table name length';
+		$self->warn;
+	}
+
 	# used internally for testing
 	if ( defined( $opts{testing} ) ) {
 		$self->{testing} = $opts{testing};
@@ -320,9 +351,15 @@ sub init {
 	my @protocols;
 	if ( defined( $self->{protocols}[0] ) ) {
 		push( @protocols, @{ $self->{protocols} } );
+	} elsif ( defined( $self->{ports}[0] ) ) {
+		# ports need a port-capable protocol, default to tcp and udp
+		push( @protocols, 'tcp', 'udp' );
 	} else {
 		push( @protocols, 'tcp', 'udp', 'icmp', 'icmp6' );
 	}
+
+	# protocols that accept a port specification
+	my %port_ok = ( tcp => 1, udp => 1, sctp => 1 );
 
 	my $pfctl = 'pfctl -a ' . $self->{prefix} . '/' . $self->{name};
 
@@ -345,7 +382,7 @@ sub init {
 	foreach my $item (@protocols) {
 		my $new_line = 'block drop quick proto ' . $item . ' from <' . $table . '> to any';
 		my $to_add   = '';
-		if ( defined( $self->{ports}[0] ) ) {
+		if ( defined( $self->{ports}[0] ) && $port_ok{$item} ) {
 			foreach my $port ( @{ $self->{ports} } ) {
 				$to_add = $to_add . $new_line . ' port ' . $port . "\n";
 			}
@@ -416,6 +453,9 @@ sub ban {
 		return;
 	}
 
+	# lowercase so the same IPv6 IP in differing cases can't result in duplicate entries
+	$opts{ban} = lc( $opts{ban} );
+
 	if ( $self->{banned}{ $opts{ban} } ) {
 		if ( $self->{testing} ) {
 			$self->{frontend_obj}->{test_data} = 'already banned';
@@ -426,9 +466,9 @@ sub ban {
 	my $command
 		= 'pfctl -a '
 		. $self->{prefix} . '/'
-		. $self->{name} . ' -T '
+		. $self->{name} . ' -t '
 		. $self->{prefix} . '_'
-		. $self->{name} . ' add '
+		. $self->{name} . ' -T add '
 		. $opts{ban};
 
 	if ( $self->{testing} ) {
@@ -444,20 +484,66 @@ sub ban {
 	}
 
 	if ( $self->{options}{kill} ) {
-		if ( defined( $self->{ports}[0] ) ) {
-			foreach my $port ( @{ $self->{ports} } ) {
-				$command
-					= 'pfctl -s state -vv 2> /dev/null | grep -E \'<*->*|id:\'  | paste - - | grep -E ":'
-					. $port
-					. ' " | grep -E "[[ ]'
-					. $opts{ban}
-					. ']*:" | sed  "s/.*[\ \t]id:[\ \t]//" | cut -d " " -f 1 | paste -s - | xargs -n 1 pfctl -k id -k ';
+		my @kill_commands;
 
-				my $output = `$command 2>&1`;
-			} ## end foreach my $port ( @{ $self->{ports} } )
+		my @protos = @{ $self->{protocols} };
+		if ( !@protos && defined( $self->{ports}[0] ) ) {
+			# ports without protocols means tcp and udp are being blocked
+			@protos = ( 'tcp', 'udp' );
+		}
+
+		if ( !@protos ) {
+			# blocking everything, so kill every state for the IP; pfctl -k
+			# handles both IPv4 and IPv6
+			push( @kill_commands, 'pfctl -k ' . $opts{ban} );
 		} else {
-			$command = 'pfctl -k ' . $opts{ban};
-			my $output = `$command 2>&1`;
+			# kill via the state table so the kill can be scoped to the
+			# blocked protocols and ports, leaving other protocols alone;
+			# pf prints IPv4 states as addr:port but IPv6 ones as addr[port]
+			my $proto_grep = 'grep -wE "(' . join( '|', @protos ) . ')" | ';
+
+			my $ip_grep;
+			my @port_greps;
+			if ( $opts{ban} =~ /\A$IPv4_re\z/ ) {
+				# escape the dots so the IP is not treated as a regexp by grep,
+				# preventing 1.2.3.4 from also matching the likes of 1.2.314.5
+				my $ban_regexp = $opts{ban};
+				$ban_regexp =~ s/\./\\./g;
+				$ip_grep = 'grep -E "[[ ]' . $ban_regexp . ']*:" | ';
+				foreach my $port ( @{ $self->{ports} } ) {
+					push( @port_greps, 'grep -E ":' . $port . ' " | ' );
+				}
+			} else {
+				$ip_grep = 'grep -F " ' . $opts{ban} . '[" | ';
+				foreach my $port ( @{ $self->{ports} } ) {
+					push( @port_greps, 'grep -F "[' . $port . '] " | ' );
+				}
+			}
+			if ( !@port_greps ) {
+				# no ports configured, so kill matching states on any port
+				@port_greps = ('');
+			}
+
+			foreach my $port_grep (@port_greps) {
+				push( @kill_commands,
+					      'pfctl -s state -vv 2> /dev/null | grep -E \'<*->*|id:\'  | paste - - | '
+						. $proto_grep
+						. $port_grep
+						. $ip_grep
+						. 'sed  "s/.*[\ \t]id:[\ \t]//" | cut -d " " -f 1 | paste -s - | xargs -n 1 pfctl -k id -k ' );
+			}
+		} ## end else [ if ( !@protos ) ]
+
+		if ( $self->{testing} ) {
+			# the ban command was stored as a scalar, convert to a array so
+			# the kill commands can be seen as well
+			$self->{frontend_obj}->{test_data} = [ $self->{frontend_obj}->{test_data}, @kill_commands ];
+		} else {
+			# best effort; exit codes are intentionally ignored as these exit
+			# non-zero when there is nothing matching to kill
+			foreach my $item (@kill_commands) {
+				my $output = `$item 2>&1`;
+			}
 		}
 	} ## end if ( $self->{options}{kill} )
 
@@ -503,6 +589,9 @@ sub unban {
 		return;
 	}
 
+	# lowercase so the same IPv6 IP in differing cases can't result in duplicate entries
+	$opts{ban} = lc( $opts{ban} );
+
 	if ( !$self->{banned}{ $opts{ban} } ) {
 		if ( $self->{testing} ) {
 			$self->{frontend_obj}->{test_data} = 'not banned';
@@ -513,10 +602,10 @@ sub unban {
 	my $command
 		= 'pfctl -a '
 		. $self->{prefix} . '/'
-		. $self->{name} . ' -T '
+		. $self->{name} . ' -t '
 		. $self->{prefix} . '_'
 		. $self->{name}
-		. ' delete '
+		. ' -T delete '
 		. $opts{ban};
 
 	if ( $self->{testing} ) {
@@ -579,7 +668,12 @@ sub re_init {
 		return;
 	}
 
-	$self->teardown;
+	# teardown is best effort here as a partially or fully wiped setup is
+	# exactly what re_init needs to recover from; init cleans up any remnants
+	{
+		local $@;
+		eval { $self->teardown; };
+	}
 	$self->init;
 
 	my @to_ban = keys( %{ $self->{banned} } );
@@ -589,9 +683,9 @@ sub re_init {
 		my $command
 			= 'pfctl -a '
 			. $self->{prefix} . '/'
-			. $self->{name} . ' -T '
+			. $self->{name} . ' -t '
 			. $self->{prefix} . '_'
-			. $self->{name} . ' add '
+			. $self->{name} . ' -T add '
 			. $item;
 
 		if ( $self->{testing} ) {
@@ -634,8 +728,6 @@ sub teardown {
 
 	$self->{inited} = 0;
 
-	$self->{frontend_obj}->{test_data} = {};
-
 	my $pfctl = 'pfctl -a ' . $self->{prefix} . '/' . $self->{name};
 
 	my $table = $self->{prefix} . '_' . $self->{name};
@@ -660,6 +752,109 @@ sub teardown {
 	} ## end else [ if ( $self->{testing} ) ]
 } ## end sub teardown
 
+=head2 stop
+
+Alias for L</teardown>, provided for parity with the fail2ban C<actionstop>
+concept.
+
+    $backend->stop;
+
+=cut
+
+sub stop {
+	my ( $self, %opts ) = @_;
+
+	return $self->teardown(%opts);
+}
+
+=head2 check
+
+Verifies that the pf table is still present under the anchor and that the
+anchor still contains the block rules. Returns a true value if the setup is
+intact and a false value if any part of it appears to have been removed. This
+is the equivalent of fail2ban's C<actioncheck>.
+
+    if ( !$backend->check ) {
+        $backend->re_init;
+    }
+
+=cut
+
+sub check {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	my $pfctl = 'pfctl -a ' . $self->{prefix} . '/' . $self->{name};
+	my $table = $self->{prefix} . '_' . $self->{name};
+
+	my $table_command = $pfctl . ' -t ' . $table . ' -T show';
+	my $rules_command = $pfctl . ' -sr';
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = [ $table_command, $rules_command ];
+		return 1;
+	}
+
+	my $output = `$table_command 2>&1`;
+	if ( $? != 0 ) {
+		return 0;
+	}
+
+	# -sr exits zero even if the anchor is empty, so the rules being flushed
+	# externally shows up as a lack of output rather than a non-zero exit
+	$output = `$rules_command 2>&1`;
+	if ( $? != 0 || $output !~ /\S/ ) {
+		return 0;
+	}
+
+	return 1;
+} ## end sub check
+
+=head2 flush
+
+Removes all currently banned IPs at once by flushing the pf table, leaving
+the table and rules in place. This is the equivalent of fail2ban's
+C<actionflush>.
+
+    $backend->flush;
+
+=cut
+
+sub flush {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( !$self->{inited} ) {
+		$self->{error}       = 1;
+		$self->{errorString} = 'backend has not been inited';
+		$self->warn;
+		return;
+	}
+
+	my $pfctl = 'pfctl -a ' . $self->{prefix} . '/' . $self->{name};
+	my $table = $self->{prefix} . '_' . $self->{name};
+
+	my @commands = ( $pfctl . ' -t ' . $table . ' -T flush' );
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = \@commands;
+	} else {
+		foreach my $item (@commands) {
+			my $output = `$item 2>&1`;
+			if ( $? != 0 ) {
+				$self->{error} = 25;
+				$self->{errorString}
+					= 'flush failed. non-zero exit code for the command... "' . $item . '"... output... ' . $output;
+				$self->warn;
+			}
+		}
+	} ## end else [ if ( $self->{testing} ) ]
+
+	$self->{banned} = {};
+} ## end sub flush
+
 =head1 ERROR CODES / FLAGS
 
 Error handling is provided by L<Error::Helper>. All
@@ -671,7 +866,7 @@ Backend has not been initted yet.
 
 =head2 2, invalidPortSpecified
 
-Port is either not a positive int or a name that can be resolved by getservbyname.
+Port is either not an int within the range 1 to 65535 or a name that can be resolved by getservbyname.
 
 =head2 3, portsNotArray
 
@@ -683,7 +878,7 @@ The data passed to new for protocols is not an array.
 
 =head2 5, invalidPortSpecified
 
-Port is either not a positive int or a name that can be resolved by getservbyname.
+Port is either not an int within the range 1 to 65535 or a name that can be resolved by getservbyname.
 
 =head2 6, invalidPrefixSpecified
 
@@ -742,6 +937,19 @@ Backend has already been initiated.
 =head2 23, initFailed
 
 One of the required commands for init failed.
+
+=head2 24, checkFailed
+
+The backend check raised an error.
+
+=head2 25, flushFailed
+
+One of the required commands for flush failed.
+
+=head2 19, nameTooLong
+
+The combined prefix and name is longer than the firewall allows for its
+object names.
 
 =head1 AUTHOR
 
