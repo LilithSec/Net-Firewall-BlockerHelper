@@ -1,0 +1,792 @@
+package Net::Firewall::BlockerHelper::backends::vyos;
+
+use 5.006;
+use strict;
+use warnings;
+use base 'Error::Helper';
+use Regexp::IPv4 qw($IPv4_re);
+use Regexp::IPv6 qw($IPv6_re);
+
+=head1 NAME
+
+Net::Firewall::BlockerHelper::backends::vyos - VyOS backend using the HTTP API.
+
+=head1 VERSION
+
+Version 0.1.0
+
+=cut
+
+our $VERSION = '0.1.0';
+
+=head1 SYNOPSIS
+
+    use Net::Firewall::BlockerHelper;
+
+    my $fw_helper = Net::Firewall::BlockerHelper->new(
+        backend => 'vyos',
+        name    => 'ssh',
+        options => {
+            host => '10.0.0.1',
+            key  => $vyos_api_key,
+        },
+    );
+
+    $fw_helper->init_backend;
+    $fw_helper->ban( ban => '1.2.3.4' );
+    $fw_helper->unban( ban => '1.2.3.4' );
+
+=head1 DESCRIPTION
+
+Blocks IPs on a VyOS device via its HTTP API, adding and removing entries in a
+firewall address-group. IPv4 addresses are managed under the config path
+C<< firewall group address-group <group> address <ip> >> and IPv6 under
+C<< firewall group ipv6-address-group <group> address <ip> >>, using the group
+name given by the C<group> option (defaulting to C<< <prefix>_<name> >>).
+
+The VyOS HTTP API takes C<application/x-www-form-urlencoded> POSTs where the
+body is C<< data=<url-escaped JSON>&key=<apikey> >>. Configuration changes are
+POSTed to C<< https://<host>/configure >> and are auto-committed. The banned
+addresses are managed only here; a firewall rule referencing the address-group
+must already exist on the device.
+
+Blocking is per IP; ports and protocols belong on the referencing rule, so
+specifying them here is an error.
+
+L<LWP::UserAgent> is loaded at run time, so it is only required when this
+backend is actually used. For https, L<LWP::Protocol::https> must be present
+as well.
+
+=head1 METHODS
+
+=head2 new
+
+    - options :: Backend specific options. See below.
+    - prefix :: Prefix to use. Must match /^[a-zA-Z0-9]+$/. Default kur.
+    - name :: Name of this instance. Required.
+
+Ports and protocols are not supported and specifying either is an error.
+
+The options hash accepts the following.
+
+    - host :: VyOS host, optionally host:port. Required.
+        - Default :: undef
+
+    - key :: VyOS HTTP API key. Required.
+        - Default :: undef
+
+    - group :: Firewall address-group name the banned addresses are added to.
+            The same name is used for the IPv4 address-group and the IPv6
+            ipv6-address-group.
+        - Default :: <prefix>_<name>
+
+    - insecure :: If true, skip TLS certificate verification (VyOS ships a
+            self-signed certificate).
+        - Default :: 0
+
+    - timeout :: HTTP timeout in seconds.
+        - Default :: 30
+
+All errors are considered fatal, meaning if new fails it will die.
+
+=cut
+
+sub new {
+	my ( $blank, %opts ) = @_;
+
+	my $self = {
+		perror        => undef,
+		error         => undef,
+		errorLine     => undef,
+		errorFilename => undef,
+		errorString   => "",
+		errorExtra    => {
+			all_errors_fatal => 1,
+			# all_fatal is what Error::Helper 2.1.0 actually checks; all_errors_fatal
+			# is kept for the name documented in its POD
+			all_fatal        => 1,
+			flags            => {
+				1  => 'notInited',
+				6  => 'invalidPrefixSpecified',
+				7  => 'invalidName',
+				8  => 'optionsNotHash',
+				9  => 'noBanItem',
+				10 => 'banItemNotIP',
+				12 => 'backendInitError',
+				13 => 'banFailed',
+				14 => 'unbanFailed',
+				15 => 'listFailed',
+				16 => 'reInitFailed',
+				17 => 'teardownFailed',
+				18 => 'alreadyInited',
+				23 => 'initFailed',
+				24 => 'checkFailed',
+				25 => 'flushFailed',
+				26 => 'portsNotSupported',
+				27 => 'protocolsNotSupported',
+				30 => 'hostNotDefined',
+				31 => 'keyNotDefined',
+			},
+			fatal_flags      => {},
+			perror_not_fatal => 0,
+		},
+		options      => {},
+		ports        => [],
+		protocols    => [],
+		testing      => undef,
+		test_data    => undef,
+		prefix       => 'kur',
+		name         => undef,
+		frontend_obj => undef,
+		inited       => 0,
+		banned       => {},
+		ua           => undef,
+	};
+	bless $self;
+
+	# blocking is per IP; ports/protocols belong on the referencing rule
+	if ( defined( $opts{ports} ) && ref( $opts{ports} ) eq 'ARRAY' && defined( $opts{ports}[0] ) ) {
+		$self->{perror}      = 1;
+		$self->{error}       = 26;
+		$self->{errorString} = 'the vyos backend manages whole IPs and does not support ports';
+		$self->warn;
+	}
+	if ( defined( $opts{protocols} ) && ref( $opts{protocols} ) eq 'ARRAY' && defined( $opts{protocols}[0] ) ) {
+		$self->{perror}      = 1;
+		$self->{error}       = 27;
+		$self->{errorString} = 'the vyos backend manages whole IPs and does not support protocols';
+		$self->warn;
+	}
+
+	# make sure prefix is sane if defined
+	if ( defined( $opts{prefix} ) && $opts{prefix} !~ /^[a-zA-Z0-9]+$/ ) {
+		$self->{perror} = 1;
+		$self->{error}  = 6;
+		$self->{errorString}
+			= '"' . $opts{prefix} . '" is not a valid prefix as it does not match the regex /^[a-zA-Z0-9]+$/';
+		$self->warn;
+	} elsif ( defined( $opts{prefix} ) ) {
+		$self->{prefix} = $opts{prefix};
+	}
+
+	# make sure we have a name and that it is valid
+	if ( !defined( $opts{name} ) ) {
+		$self->{perror}      = 1;
+		$self->{error}       = 7;
+		$self->{errorString} = 'name is undef';
+		$self->warn;
+	} elsif ( $opts{name} !~ /^[a-zA-Z0-9\-]+$/ ) {
+		$self->{perror}      = 1;
+		$self->{error}       = 7;
+		$self->{errorString} = 'name set to "' . $opts{name} . '" which does not match the regexp  /^[a-zA-Z0-9\-]+$/';
+		$self->warn;
+	}
+	$self->{name} = $opts{name};
+
+	if ( defined( $opts{testing} ) ) {
+		$self->{testing} = $opts{testing};
+	}
+	if ( defined( $opts{frontend_obj} ) ) {
+		$self->{frontend_obj} = $opts{frontend_obj};
+	}
+
+	if ( defined( $opts{options} ) ) {
+		if ( ref( $opts{options} ) ne 'HASH' ) {
+			$self->{perror}      = 1;
+			$self->{error}       = 8;
+			$self->{errorString} = 'ref for options is "' . ref( $opts{options} ) . '" and not HASH';
+			$self->warn;
+		}
+		$self->{options} = $opts{options};
+	}
+
+	# required connection options
+	if ( !defined( $self->{options}{host} ) || $self->{options}{host} eq '' ) {
+		$self->{perror}      = 1;
+		$self->{error}       = 30;
+		$self->{errorString} = 'the option host is undef or blank';
+		$self->warn;
+	}
+	if ( !defined( $self->{options}{key} ) || $self->{options}{key} eq '' ) {
+		$self->{perror}      = 1;
+		$self->{error}       = 31;
+		$self->{errorString} = 'the option key is undef or blank';
+		$self->warn;
+	}
+
+	# defaults
+	$self->{options}{insecure} = 0  if ( !defined( $self->{options}{insecure} ) );
+	$self->{options}{timeout}  = 30 if ( !defined( $self->{options}{timeout} ) );
+	if ( defined( $self->{name} ) ) {
+		$self->{options}{group} = $self->{prefix} . '_' . $self->{name} if ( !defined( $self->{options}{group} ) );
+	}
+
+	return $self;
+} ## end sub new
+
+=head2 _group_path
+
+Internal helper. Returns the config path arrayref for the passed IP's family
+and operation. IPv4 uses the C<address-group> node and IPv6 the
+C<ipv6-address-group> node.
+
+=cut
+
+sub _group_path {
+	my ( $self, $ip ) = @_;
+
+	my $node = ( $ip =~ /\A$IPv6_re\z/ ) ? 'ipv6-address-group' : 'address-group';
+
+	return [ 'firewall', 'group', $node, $self->{options}{group}, 'address', $ip ];
+}
+
+=head2 _uri_escape
+
+Internal helper. Minimal percent encoder so URI::Escape is not needed.
+
+=cut
+
+sub _uri_escape {
+	my ( $self, $string ) = @_;
+
+	$string =~ s/([^A-Za-z0-9\-._~])/sprintf('%%%02X', ord($1))/ge;
+
+	return $string;
+}
+
+=head2 _json
+
+Internal helper. Returns a canonical JSON::PP encoder/decoder.
+
+=cut
+
+sub _json {
+	my ($self) = @_;
+
+	require JSON::PP;
+	return JSON::PP->new->canonical->utf8;
+}
+
+=head2 _op_json
+
+Internal helper. Returns the JSON string for a configuration operation on the
+passed IP. C<$op> is either 'set' or 'delete'. This is the C<data> value the
+VyOS API expects and, in testing mode, exactly what is recorded so the API key
+is never leaked.
+
+=cut
+
+sub _op_json {
+	my ( $self, $op, $ip ) = @_;
+
+	return $self->_json->encode( { op => $op, path => $self->_group_path($ip) } );
+}
+
+=head2 _form_body
+
+Internal helper. Returns the full C<< data=<url-escaped JSON>&key=<apikey> >>
+form body for a configuration operation on the passed IP. Only used in real
+mode, never in testing mode, so the key is not recorded.
+
+=cut
+
+sub _form_body {
+	my ( $self, $op, $ip ) = @_;
+
+	return
+		  'data='
+		. $self->_uri_escape( $self->_op_json( $op, $ip ) )
+		. '&key='
+		. $self->_uri_escape( $self->{options}{key} );
+} ## end sub _form_body
+
+=head2 _base_url
+
+Internal helper. Returns the base URL for the VyOS host.
+
+=cut
+
+sub _base_url {
+	my ($self) = @_;
+
+	return 'https://' . $self->{options}{host};
+}
+
+=head2 _retrieve_body
+
+Internal helper. Returns the JSON string used to retrieve the address-group
+config, used by init and check. In testing mode this is exactly what is
+recorded so the API key is never leaked.
+
+=cut
+
+sub _retrieve_body {
+	my ($self) = @_;
+
+	return $self->_json->encode(
+		{ op => 'showConfig', path => [ 'firewall', 'group', 'address-group', $self->{options}{group} ] } );
+}
+
+=head2 _retrieve_form_body
+
+Internal helper. Returns the full C<< data=<url-escaped JSON>&key=<apikey> >>
+form body used by init and check. Only used in real mode, never in testing
+mode, so the key is not recorded.
+
+=cut
+
+sub _retrieve_form_body {
+	my ($self) = @_;
+
+	return
+		  'data='
+		. $self->_uri_escape( $self->_retrieve_body )
+		. '&key='
+		. $self->_uri_escape( $self->{options}{key} );
+} ## end sub _retrieve_form_body
+
+=head2 _request
+
+Internal helper. Performs a HTTP POST via LWP::UserAgent, POSTing the passed
+form-urlencoded body and dying with an explanation on any HTTP level failure.
+Never called in testing mode.
+
+=cut
+
+sub _request {
+	my ( $self, $method, $url, $body ) = @_;
+
+	if ( !defined( $self->{ua} ) ) {
+		local $@;
+		eval {
+			require LWP::UserAgent;
+			my %args = (
+				agent   => 'Net::Firewall::BlockerHelper/' . $VERSION,
+				timeout => $self->{options}{timeout},
+			);
+			if ( $self->{options}{insecure} ) {
+				$args{ssl_opts} = { verify_hostname => 0, SSL_verify_mode => 0 };
+			}
+			$self->{ua} = LWP::UserAgent->new(%args);
+			1;
+		} or die( 'failed to load LWP::UserAgent, which the vyos backend requires... ' . $@ );
+	}
+
+	my @headers = ( 'Content-Type' => 'application/x-www-form-urlencoded' );
+
+	require HTTP::Request;
+	my $request = HTTP::Request->new( $method, $url, \@headers, $body );
+
+	my $response = $self->{ua}->request($request);
+
+	if ( !$response->is_success ) {
+		my $detail = $response->decoded_content;
+		$detail = defined($detail) ? ( ' body... ' . $detail ) : '';
+		die( $method . ' ' . $url . ' failed... HTTP status... ' . $response->status_line . $detail );
+	}
+
+	my $decoded;
+	my $content = $response->decoded_content;
+	if ( defined($content) && $content ne '' ) {
+		local $@;
+		eval { $decoded = $self->_json->decode($content); };
+	}
+
+	return $decoded;
+} ## end sub _request
+
+=head2 init
+
+Initiates the backend. Verifies the credentials and reachability by retrieving
+the address-group config.
+
+=cut
+
+sub init {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( $self->{inited} ) {
+		$self->{error}       = 18;
+		$self->{errorString} = 'backend has already been inited';
+		$self->warn;
+	}
+
+	my $url = $self->_base_url . '/retrieve';
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data}
+			= [ { method => 'POST', url => $url, content => $self->_retrieve_body } ];
+	} else {
+		local $@;
+		eval { $self->_request( 'POST', $url, $self->_retrieve_form_body ); 1; } or do {
+			$self->{error}       = 23;
+			$self->{errorString} = 'init failed. probing the address-group config failed... ' . $@;
+			$self->warn;
+		};
+	}
+
+	$self->{inited} = 1;
+} ## end sub init
+
+=head2 ban
+
+Bans the IP by adding it to the address-group.
+
+    $backend->ban(ban => $ip);
+
+=cut
+
+sub ban {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( !$self->{inited} ) {
+		$self->{error}       = 1;
+		$self->{errorString} = 'backend has not been inited';
+		$self->warn;
+		return;
+	}
+
+	if ( !defined( $opts{ban} ) ) {
+		$self->{error}       = 9;
+		$self->{errorString} = 'Nothing specified for the value ban';
+		$self->warn;
+		return;
+	} elsif ( ref( $opts{ban} ) ne '' ) {
+		$self->{error}       = 10;
+		$self->{errorString} = 'Bad ref type for ban... ref is "' . ref( $opts{ban} ) . '"';
+		$self->warn;
+		return;
+	} elsif ( $opts{ban} !~ /\A$IPv4_re\z/
+		&& $opts{ban} !~ /\A$IPv6_re\z/ )
+	{
+		$self->{error}       = 10;
+		$self->{errorString} = 'ban item,"' . $opts{ban} . '", does not appear to be a IPv4 or IPv6 IP';
+		$self->warn;
+		return;
+	}
+
+	# lowercase so the same IPv6 IP in differing cases can't result in duplicate entries
+	$opts{ban} = lc( $opts{ban} );
+
+	if ( $self->{banned}{ $opts{ban} } ) {
+		if ( $self->{testing} ) {
+			$self->{frontend_obj}->{test_data} = 'already banned';
+		}
+		return;
+	}
+
+	my $url = $self->_base_url . '/configure';
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data}
+			= [ { method => 'POST', url => $url, content => $self->_op_json( 'set', $opts{ban} ) } ];
+	} else {
+		local $@;
+		eval { $self->_request( 'POST', $url, $self->_form_body( 'set', $opts{ban} ) ); 1; } or do {
+			$self->{error}       = 13;
+			$self->{errorString} = 'banning "' . $opts{ban} . '" failed... ' . $@;
+			$self->warn;
+			return;
+		};
+	}
+
+	$self->{banned}{ $opts{ban} } = 1;
+} ## end sub ban
+
+=head2 unban
+
+Unbans the IP by deleting it from the address-group.
+
+    $backend->unban(ban => $ip);
+
+=cut
+
+sub unban {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( !$self->{inited} ) {
+		$self->{error}       = 1;
+		$self->{errorString} = 'backend has not been inited';
+		$self->warn;
+		return;
+	}
+
+	if ( !defined( $opts{ban} ) ) {
+		$self->{error}       = 9;
+		$self->{errorString} = 'Nothing specified for the value ban';
+		$self->warn;
+		return;
+	} elsif ( ref( $opts{ban} ) ne '' ) {
+		$self->{error}       = 10;
+		$self->{errorString} = 'Bad ref type for ban... ref is "' . ref( $opts{ban} ) . '"';
+		$self->warn;
+		return;
+	} elsif ( $opts{ban} !~ /\A$IPv4_re\z/
+		&& $opts{ban} !~ /\A$IPv6_re\z/ )
+	{
+		$self->{error}       = 10;
+		$self->{errorString} = 'ban item,"' . $opts{ban} . '", does not appear to be a IPv4 or IPv6 IP';
+		$self->warn;
+		return;
+	}
+
+	# lowercase so the same IPv6 IP in differing cases can't result in duplicate entries
+	$opts{ban} = lc( $opts{ban} );
+
+	if ( !$self->{banned}{ $opts{ban} } ) {
+		if ( $self->{testing} ) {
+			$self->{frontend_obj}->{test_data} = 'not banned';
+		}
+		return;
+	}
+
+	my $url = $self->_base_url . '/configure';
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data}
+			= [ { method => 'POST', url => $url, content => $self->_op_json( 'delete', $opts{ban} ) } ];
+	} else {
+		local $@;
+		eval { $self->_request( 'POST', $url, $self->_form_body( 'delete', $opts{ban} ) ); 1; } or do {
+			$self->{error}       = 14;
+			$self->{errorString} = 'unbanning "' . $opts{ban} . '" failed... ' . $@;
+			$self->warn;
+			return;
+		};
+	}
+
+	delete( $self->{banned}{ $opts{ban} } );
+} ## end sub unban
+
+=head2 list
+
+List banned IPs.
+
+    my @banned = $backend->list;
+
+=cut
+
+sub list {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = 'list';
+	}
+
+	return keys( %{ $self->{banned} } );
+}
+
+=head2 re_init
+
+Tears down and re-inits, then re-adds all previously added bans.
+
+=cut
+
+sub re_init {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( !$self->{inited} ) {
+		$self->{error}       = 1;
+		$self->{errorString} = 'backend has not been inited';
+		$self->warn;
+		return;
+	}
+
+	# teardown is best effort here as a partially or fully wiped setup is
+	# exactly what re_init needs to recover from
+	{
+		local $@;
+		eval { $self->teardown; };
+	}
+	$self->init;
+
+	my $url = $self->_base_url . '/configure';
+
+	my @re_init_test_data;
+	foreach my $item ( sort( keys( %{ $self->{banned} } ) ) ) {
+		if ( $self->{testing} ) {
+			push( @re_init_test_data, { method => 'POST', url => $url, content => $self->_op_json( 'set', $item ) } );
+		} else {
+			local $@;
+			eval { $self->_request( 'POST', $url, $self->_form_body( 'set', $item ) ); 1; } or do {
+				$self->{error}       = 13;
+				$self->{errorString} = 'banning "' . $item . '" failed... ' . $@;
+				$self->warn;
+			};
+		}
+	} ## end foreach my $item ( sort( keys...))
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = \@re_init_test_data;
+	}
+
+	$self->{inited} = 1;
+} ## end sub re_init
+
+=head2 teardown
+
+Tears down the setup by deleting the address-group entry for each currently
+banned IP. The internal list of bans is kept, so a following re_init will
+re-add them.
+
+=cut
+
+sub teardown {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	$self->{inited} = 0;
+
+	my $url = $self->_base_url . '/configure';
+
+	my @requests;
+	foreach my $item ( sort( keys( %{ $self->{banned} } ) ) ) {
+		if ( $self->{testing} ) {
+			push( @requests, { method => 'POST', url => $url, content => $self->_op_json( 'delete', $item ) } );
+		} else {
+			local $@;
+			eval { $self->_request( 'POST', $url, $self->_form_body( 'delete', $item ) ); 1; } or do {
+				$self->{error}       = 17;
+				$self->{errorString} = 'teardown failed removing the entry for "' . $item . '"... ' . $@;
+				$self->warn;
+			};
+		}
+	} ## end foreach my $item ( sort( keys...))
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = \@requests;
+	}
+} ## end sub teardown
+
+=head2 stop
+
+Alias for L</teardown>.
+
+=cut
+
+sub stop {
+	my ( $self, %opts ) = @_;
+
+	return $self->teardown(%opts);
+}
+
+=head2 check
+
+Verifies the endpoint and credentials are still usable by retrieving the
+address-group config. Returns a true value if so and a false value otherwise.
+
+=cut
+
+sub check {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	my $url = $self->_base_url . '/retrieve';
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data}
+			= [ { method => 'POST', url => $url, content => $self->_retrieve_body } ];
+		return 1;
+	}
+
+	local $@;
+	eval { $self->_request( 'POST', $url, $self->_retrieve_form_body ); 1; } or return 0;
+
+	return 1;
+} ## end sub check
+
+=head2 flush
+
+Removes all currently banned IPs at once by deleting their address-group
+entries and forgetting them.
+
+=cut
+
+sub flush {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( !$self->{inited} ) {
+		$self->{error}       = 1;
+		$self->{errorString} = 'backend has not been inited';
+		$self->warn;
+		return;
+	}
+
+	my $url = $self->_base_url . '/configure';
+
+	my @requests;
+	foreach my $item ( sort( keys( %{ $self->{banned} } ) ) ) {
+		if ( $self->{testing} ) {
+			push( @requests, { method => 'POST', url => $url, content => $self->_op_json( 'delete', $item ) } );
+		} else {
+			local $@;
+			eval { $self->_request( 'POST', $url, $self->_form_body( 'delete', $item ) ); 1; } or do {
+				$self->{error}       = 25;
+				$self->{errorString} = 'flush failed removing the entry for "' . $item . '"... ' . $@;
+				$self->warn;
+			};
+		}
+	} ## end foreach my $item ( sort( keys...))
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = \@requests;
+	}
+
+	$self->{banned} = {};
+} ## end sub flush
+
+=head1 ERROR CODES / FLAGS
+
+Error handling is provided by L<Error::Helper>. All errors are considered
+fatal.
+
+    1  notInited
+    6  invalidPrefixSpecified
+    7  invalidName
+    8  optionsNotHash
+    9  noBanItem
+    10 banItemNotIP
+    12 backendInitError
+    13 banFailed
+    14 unbanFailed
+    15 listFailed
+    16 reInitFailed
+    17 teardownFailed
+    18 alreadyInited
+    23 initFailed
+    24 checkFailed
+    25 flushFailed
+    26 portsNotSupported
+    27 protocolsNotSupported
+    30 hostNotDefined
+    31 keyNotDefined
+
+=head1 AUTHOR
+
+Zane C. Bowers-Hadley, C<< <vvelox at vvelox.ent> >>
+
+=head1 LICENSE AND COPYRIGHT
+
+This software is Copyright (c) 2023 by Zane C. Bowers-Hadley.
+
+This is free software, licensed under:
+
+  The GNU Lesser General Public License, Version 2.1, February 1999
+
+=cut
+
+1;    # End of Net::Firewall::BlockerHelper::backends::vyos

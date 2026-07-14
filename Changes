@@ -27,6 +27,9 @@ Revision history for Net-Firewall-BlockerHelper
           - panos       :: Palo Alto Networks PAN-OS; registers IPs to a tag
             via the User-ID XML API for a Dynamic Address Group to match (no
             commit needed).
+          - abuseipdb   :: report banned IPs to AbuseIPDB via its v2 REST
+            API. Reporting only; pairs with a blocking backend. unban/flush/
+            teardown are internal only as reports can not be withdrawn.
           - fortigate   :: Fortinet FortiGate; creates firewall address
             objects and adds them to an address group via the FortiOS REST API.
         - ipfw: emit family-correct rules. The ipfw 'me' keyword only matches

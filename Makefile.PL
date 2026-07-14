@@ -27,7 +27,8 @@ my %WriteMakefileArgs = (
 		"meta-spec" => { version => 2 },
 		prereqs     => {
 			runtime => {
-				# only needed by the cloudflare and netscaler backends,
+				# only needed by the HTTP API backends (abuseipdb, cloudflare,
+				# fortigate, netscaler, panos, and routeros_api),
 				# which load it at run time
 				recommends => {
 					'LWP::UserAgent'       => '0',

@@ -19,6 +19,7 @@ Currently included backends are for...
 The following remote/API backends are available. These use LWP::UserAgent,
 which is only loaded if they are used.
 
+- abuseipdb (report banned IPs to AbuseIPDB; reporting only, blocks nothing itself)
 - cloudflare
 - fortigate (Fortinet FortiGate address group via the FortiOS REST API)
 - netscaler

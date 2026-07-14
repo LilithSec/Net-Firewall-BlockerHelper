@@ -1,5 +1,6 @@
 Changes
 lib/Net/Firewall/BlockerHelper.pm
+lib/Net/Firewall/BlockerHelper/backends/abuseipdb.pm
 lib/Net/Firewall/BlockerHelper/backends/bgp_rtbh.pm
 lib/Net/Firewall/BlockerHelper/backends/cloudflare.pm
 lib/Net/Firewall/BlockerHelper/backends/dummy.pm
@@ -33,6 +34,7 @@ t/02-load__Net__Firewall__Blocker__backends__ipfw.t
 t/03-load__Net__Firewall__Blocker__backends__pf.t
 t/04-load__Net__Firewall__Blocker__backends__shell.t
 t/05-load__Net__Firewall__Blocker__backends__iptables.t
+t/abuseipdb.t
 t/ban_state.t
 t/bgp_rtbh.t
 t/check_depth.t
