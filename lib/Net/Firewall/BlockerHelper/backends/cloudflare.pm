@@ -139,6 +139,11 @@ sub new {
 				26 => 'portsNotSupported',
 				27 => 'protocolsNotSupported',
 				28 => 'optionInvalid',
+				29 => 'banCidrFailed',
+				30 => 'unbanCidrFailed',
+				31 => 'cidrItemNotCidr',
+				32 => 'cidrNotSupported',
+				33 => 'listCidrFailed',
 			},
 			fatal_flags      => {},
 			perror_not_fatal => 0,
@@ -150,9 +155,11 @@ sub new {
 		test_data    => undef,
 		prefix       => 'kur',
 		frontend_obj => undef,
-		inited       => 0,
-		banned       => {},
-		ua           => undef,
+		inited         => 0,
+		banned         => {},
+		banned_cidr    => {},
+		cidr_supported => 1,
+		ua             => undef,
 	};
 	bless $self;
 
@@ -595,6 +602,225 @@ sub unban {
 	delete( $self->{banned}{ $opts{ban} } );
 } ## end sub unban
 
+=head2 _valid_cidr
+
+Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
+IPv6 CIDR range, that is an address followed by C</> and a prefix length that
+is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
+IPv6). Returns false otherwise.
+
+=cut
+
+sub _valid_cidr {
+	my ( $self, $cidr ) = @_;
+
+	return 0 if ( !defined($cidr) || ref($cidr) ne '' );
+
+	if ( $cidr =~ m!\A(.+)/([0-9]{1,3})\z! ) {
+		my ( $addr, $prefix ) = ( $1, $2 );
+		return 1 if ( $addr =~ /\A$IPv4_re\z/ && $prefix <= 32 );
+		return 1 if ( $addr =~ /\A$IPv6_re\z/ && $prefix <= 128 );
+	}
+
+	return 0;
+} ## end sub _valid_cidr
+
+=head2 ban_cidr
+
+Bans a CIDR range by creating an access rule for it. Cloudflare access rules
+accept a network prefix as the configuration value in the same manner as a
+single address.
+
+    $backend->ban_cidr(ban => '1.2.3.0/24');
+
+=cut
+
+sub ban_cidr {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( !$self->{inited} ) {
+		$self->{error}       = 1;
+		$self->{errorString} = 'backend has not been inited';
+		$self->warn;
+		return;
+	}
+
+	if ( !defined( $opts{ban} ) ) {
+		$self->{error}       = 9;
+		$self->{errorString} = 'Nothing specified for the value ban';
+		$self->warn;
+		return;
+	} elsif ( ref( $opts{ban} ) ne '' ) {
+		$self->{error}       = 31;
+		$self->{errorString} = 'Bad ref type for ban... ref is "' . ref( $opts{ban} ) . '"';
+		$self->warn;
+		return;
+	} elsif ( !$self->_valid_cidr( $opts{ban} ) ) {
+		$self->{error}       = 31;
+		$self->{errorString} = 'ban item,"' . $opts{ban} . '", does not appear to be a IPv4 or IPv6 CIDR';
+		$self->warn;
+		return;
+	}
+
+	# lowercase so the same IPv6 CIDR in differing cases can't result in duplicate entries
+	$opts{ban} = lc( $opts{ban} );
+
+	if ( $self->{banned_cidr}{ $opts{ban} } ) {
+		if ( $self->{testing} ) {
+			$self->{frontend_obj}->{test_data} = 'already banned';
+		}
+		return;
+	}
+
+	# the address portion of the CIDR determines the family, and thus the target
+	my $target = ( $opts{ban} =~ m!\A$IPv4_re/! ) ? 'ip' : 'ip6';
+	my $body   = $self->_json->encode(
+		{
+			mode          => $self->{options}{mode},
+			configuration => { target => $target, value => $opts{ban} },
+			notes         => $self->{options}{notes},
+		}
+	);
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = [ { method => 'POST', url => $self->_endpoint, content => $body } ];
+	} else {
+		local $@;
+		eval { $self->_request( 'POST', $self->_endpoint, $body ); 1; } or do {
+			$self->{error}       = 29;
+			$self->{errorString} = 'banning "' . $opts{ban} . '" failed... ' . $@;
+			$self->warn;
+			return;
+		};
+	}
+
+	$self->{banned_cidr}{ $opts{ban} } = 1;
+} ## end sub ban_cidr
+
+=head2 _unban_cidr_lookup_url
+
+Internal helper. Returns the lookup URL used to find the rule ID for the
+passed CIDR range.
+
+=cut
+
+sub _unban_cidr_lookup_url {
+	my ( $self, $cidr ) = @_;
+
+	my $target = ( $cidr =~ m!\A$IPv4_re/! ) ? 'ip' : 'ip6';
+
+	return
+		  $self->_endpoint
+		. '?mode='
+		. $self->{options}{mode}
+		. '&notes='
+		. $self->_uri_escape( $self->{options}{notes} )
+		. '&configuration.target='
+		. $target
+		. '&configuration.value='
+		. $self->_uri_escape($cidr);
+} ## end sub _unban_cidr_lookup_url
+
+=head2 unban_cidr
+
+Unbans a CIDR range by finding and deleting its access rule.
+
+    $backend->unban_cidr(ban => '1.2.3.0/24');
+
+=cut
+
+sub unban_cidr {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( !$self->{inited} ) {
+		$self->{error}       = 1;
+		$self->{errorString} = 'backend has not been inited';
+		$self->warn;
+		return;
+	}
+
+	if ( !defined( $opts{ban} ) ) {
+		$self->{error}       = 9;
+		$self->{errorString} = 'Nothing specified for the value ban';
+		$self->warn;
+		return;
+	} elsif ( ref( $opts{ban} ) ne '' ) {
+		$self->{error}       = 31;
+		$self->{errorString} = 'Bad ref type for ban... ref is "' . ref( $opts{ban} ) . '"';
+		$self->warn;
+		return;
+	} elsif ( !$self->_valid_cidr( $opts{ban} ) ) {
+		$self->{error}       = 31;
+		$self->{errorString} = 'ban item,"' . $opts{ban} . '", does not appear to be a IPv4 or IPv6 CIDR';
+		$self->warn;
+		return;
+	}
+
+	# lowercase so the same IPv6 CIDR in differing cases can't result in duplicate entries
+	$opts{ban} = lc( $opts{ban} );
+
+	if ( !$self->{banned_cidr}{ $opts{ban} } ) {
+		if ( $self->{testing} ) {
+			$self->{frontend_obj}->{test_data} = 'not banned';
+		}
+		return;
+	}
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = [
+			{ method => 'GET',    url => $self->_unban_cidr_lookup_url( $opts{ban} ) },
+			{ method => 'DELETE', url => $self->_endpoint . '/<id>' },
+		];
+	} else {
+		local $@;
+		eval {
+			my $decoded = $self->_request( 'GET', $self->_unban_cidr_lookup_url( $opts{ban} ) );
+
+			my $id;
+			if ( ref( $decoded->{result} ) eq 'ARRAY' && defined( $decoded->{result}[0] ) ) {
+				$id = $decoded->{result}[0]{id};
+			}
+
+			# no rule found means something else removed it already, which is fine
+			if ( defined($id) ) {
+				$self->_request( 'DELETE', $self->_endpoint . '/' . $id );
+			}
+			1;
+		} or do {
+			$self->{error}       = 30;
+			$self->{errorString} = 'unbanning "' . $opts{ban} . '" failed... ' . $@;
+			$self->warn;
+			return;
+		};
+	} ## end else [ if ( $self->{testing} ) ]
+
+	delete( $self->{banned_cidr}{ $opts{ban} } );
+} ## end sub unban_cidr
+
+=head2 list_cidr
+
+List banned CIDR ranges.
+
+    my @banned_cidrs = $backend->list_cidr;
+
+=cut
+
+sub list_cidr {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = 'list_cidr';
+	}
+
+	return keys( %{ $self->{banned_cidr} } );
+}
+
 =head2 list
 
 List banned IPs.
@@ -670,6 +896,32 @@ sub re_init {
 			};
 		}
 	} ## end foreach my $item (@to_ban)
+
+	# CIDR ranges are re-added the same way, the address portion of the CIDR
+	# determining the target
+	my @to_ban_cidr = keys( %{ $self->{banned_cidr} } );
+
+	foreach my $item (@to_ban_cidr) {
+		my $target = ( $item =~ m!\A$IPv4_re/! ) ? 'ip' : 'ip6';
+		my $body   = $self->_json->encode(
+			{
+				mode          => $self->{options}{mode},
+				configuration => { target => $target, value => $item },
+				notes         => $self->{options}{notes},
+			}
+		);
+
+		if ( $self->{testing} ) {
+			push( @re_init_test_data, { method => 'POST', url => $self->_endpoint, content => $body } );
+		} else {
+			local $@;
+			eval { $self->_request( 'POST', $self->_endpoint, $body ); 1; } or do {
+				$self->{error}       = 29;
+				$self->{errorString} = 'banning "' . $item . '" failed... ' . $@;
+				$self->warn;
+			};
+		}
+	} ## end foreach my $item (@to_ban_cidr)
 
 	if ( $self->{testing} ) {
 		$self->{frontend_obj}->{test_data} = \@re_init_test_data;
@@ -802,11 +1054,42 @@ sub flush {
 		}
 	} ## end foreach my $item ( sort( keys( %{ $self->{banned...})))
 
+	# CIDR ranges are removed the same way, looked up by their own lookup URL
+	foreach my $item ( sort( keys( %{ $self->{banned_cidr} } ) ) ) {
+		if ( $self->{testing} ) {
+			push(
+				@requests,
+				{ method => 'GET',    url => $self->_unban_cidr_lookup_url($item) },
+				{ method => 'DELETE', url => $self->_endpoint . '/<id>' }
+			);
+		} else {
+			local $@;
+			eval {
+				my $decoded = $self->_request( 'GET', $self->_unban_cidr_lookup_url($item) );
+
+				my $id;
+				if ( ref( $decoded->{result} ) eq 'ARRAY' && defined( $decoded->{result}[0] ) ) {
+					$id = $decoded->{result}[0]{id};
+				}
+
+				if ( defined($id) ) {
+					$self->_request( 'DELETE', $self->_endpoint . '/' . $id );
+				}
+				1;
+			} or do {
+				$self->{error}       = 25;
+				$self->{errorString} = 'flush failed removing the rule for "' . $item . '"... ' . $@;
+				$self->warn;
+			};
+		} ## end else [ if ( $self->{testing} ) ]
+	} ## end foreach my $item ( sort( keys( %{ $self->{banned_cidr...})))
+
 	if ( $self->{testing} ) {
 		$self->{frontend_obj}->{test_data} = \@requests;
 	}
 
-	$self->{banned} = {};
+	$self->{banned}      = {};
+	$self->{banned_cidr} = {};
 } ## end sub flush
 
 =head1 ERROR CODES / FLAGS
@@ -834,6 +1117,32 @@ fatal.
     26 portsNotSupported
     27 protocolsNotSupported
     28 optionInvalid
+    29 cidrItemNotCidr
+    30 cidrNotSupported
+    31 banCidrFailed
+    32 unbanCidrFailed
+    33 listCidrFailed
+
+=head2 31, cidrItemNotCidr
+
+The item to ban is not a CIDR range. Either wrong ref type or it is not an
+IPv4 or IPv6 address followed by a prefix length valid for its family.
+
+=head2 32, cidrNotSupported
+
+The backend does not support CIDR bans.
+
+=head2 29, banCidrFailed
+
+Failed to ban the CIDR range.
+
+=head2 30, unbanCidrFailed
+
+Failed to unban the CIDR range.
+
+=head2 33, listCidrFailed
+
+Failed to get a list of CIDR bans.
 
 =head1 AUTHOR
 

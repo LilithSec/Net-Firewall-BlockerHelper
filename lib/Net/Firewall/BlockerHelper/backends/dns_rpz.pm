@@ -123,6 +123,11 @@ sub new {
 				27 => 'protocolsNotSupported',
 				30 => 'zoneInvalid',
 				31 => 'keyfileInvalid',
+				32 => 'banCidrFailed',
+				33 => 'unbanCidrFailed',
+				34 => 'cidrItemNotCidr',
+				35 => 'cidrNotSupported',
+				36 => 'listCidrFailed',
 			},
 			fatal_flags      => {},
 			perror_not_fatal => 0,
@@ -137,6 +142,7 @@ sub new {
 		frontend_obj => undef,
 		inited       => 0,
 		banned       => {},
+		cidr_supported => 0,
 	};
 	bless $self;
 
@@ -513,6 +519,88 @@ sub list {
 	return keys( %{ $self->{banned} } );
 }
 
+=head2 _valid_cidr
+
+Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
+IPv6 CIDR range, that is an address followed by C</> and a prefix length that
+is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
+IPv6). Returns false otherwise.
+
+=cut
+
+sub _valid_cidr {
+	my ( $self, $cidr ) = @_;
+
+	return 0 if ( !defined($cidr) || ref($cidr) ne '' );
+
+	if ( $cidr =~ m!\A(.+)/([0-9]{1,3})\z! ) {
+		my ( $addr, $prefix ) = ( $1, $2 );
+		return 1 if ( $addr =~ /\A$IPv4_re\z/ && $prefix <= 32 );
+		return 1 if ( $addr =~ /\A$IPv6_re\z/ && $prefix <= 128 );
+	}
+
+	return 0;
+} ## end sub _valid_cidr
+
+=head2 ban_cidr
+
+CIDR bans are not supported by this backend; this always sets the
+cidrNotSupported error.
+
+    $backend->ban_cidr(ban => '1.2.3.0/24');
+
+=cut
+
+sub ban_cidr {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	$self->{error}       = 35;
+	$self->{errorString} = 'the ' . __PACKAGE__ . ' backend does not support CIDR bans';
+	$self->warn;
+
+	return;
+} ## end sub ban_cidr
+
+=head2 unban_cidr
+
+CIDR bans are not supported by this backend; this always sets the
+cidrNotSupported error.
+
+    $backend->unban_cidr(ban => '1.2.3.0/24');
+
+=cut
+
+sub unban_cidr {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	$self->{error}       = 35;
+	$self->{errorString} = 'the ' . __PACKAGE__ . ' backend does not support CIDR bans';
+	$self->warn;
+
+	return;
+} ## end sub unban_cidr
+
+=head2 list_cidr
+
+CIDR bans are not supported by this backend, so this always returns an empty
+list.
+
+    my @banned_cidrs = $backend->list_cidr;
+
+=cut
+
+sub list_cidr {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	return ();
+}
+
 =head2 re_init
 
 Re-adds every retained RPZ record.
@@ -688,6 +776,32 @@ sub flush {
     27 protocolsNotSupported
     30 zoneInvalid
     31 keyfileInvalid
+    28 cidrItemNotCidr
+    29 cidrNotSupported
+    32 banCidrFailed
+    33 unbanCidrFailed
+    34 listCidrFailed
+
+=head2 34, cidrItemNotCidr
+
+The item to ban is not a CIDR range. Either wrong ref type or it is not an
+IPv4 or IPv6 address followed by a prefix length valid for its family.
+
+=head2 35, cidrNotSupported
+
+The backend does not support CIDR bans.
+
+=head2 32, banCidrFailed
+
+Failed to ban the CIDR range.
+
+=head2 33, unbanCidrFailed
+
+Failed to unban the CIDR range.
+
+=head2 36, listCidrFailed
+
+Failed to get a list of CIDR bans.
 
 =head1 AUTHOR
 

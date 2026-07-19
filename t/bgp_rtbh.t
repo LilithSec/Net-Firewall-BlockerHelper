@@ -38,6 +38,27 @@ BEGIN {
 	is( $fw->{test_data}, 'already banned', 're-banning reports already banned' );
 
 	is_deeply( [ $fw->list ], ['dead::1'], 'list reflects the remaining ban' );
+
+	ok( $fw->{backend_obj}->{cidr_supported}, 'backend reports cidr_supported' );
+
+	$fw->ban_cidr( ban => '1.2.3.0/24' );
+	is( $fw->{test_data},
+		'exabgpcli announce route 1.2.3.0/24 next-hop 192.0.2.1 community [65535:666]',
+		'IPv4 CIDR ban announces the range verbatim with the default BLACKHOLE community' );
+
+	$fw->ban_cidr( ban => 'dead::/64' );
+	is( $fw->{test_data},
+		'exabgpcli announce route dead::/64 next-hop 100::1 community [65535:666]',
+		'IPv6 CIDR ban announces the range with the v6 next-hop' );
+
+	is_deeply( [ sort $fw->list_cidr ], [ '1.2.3.0/24', 'dead::/64' ], 'list_cidr holds both CIDR bans' );
+
+	$fw->unban_cidr( ban => '1.2.3.0/24' );
+	is( $fw->{test_data},
+		'exabgpcli withdraw route 1.2.3.0/24 next-hop 192.0.2.1 community [65535:666]',
+		'CIDR unban withdraws the same range' );
+
+	is_deeply( [ sort $fw->list_cidr ], ['dead::/64'], 'list_cidr drops the unbanned CIDR' );
 }
 
 # custom community, mask, and extra attributes

@@ -28,6 +28,13 @@ BEGIN {
 	$fw->unban( ban => '1.2.3.4' );
 	is( $fw->{test_data}, 'xdp-filter ip 1.2.3.4 -m src -r', 'unban removes the ip with -r' );
 
+	my $cidr_blocked = 0;
+	eval { $fw->ban_cidr( ban => '1.2.3.0/24' ); };
+	if ( defined( $fw->{error} ) && $fw->{error} == 29 ) { $cidr_blocked = 1; }
+	if ( !$cidr_blocked ) {
+		die( 'ban_cidr did not set frontend error 29 cidrNotSupported... got ' . ( defined( $fw->{error} ) ? $fw->{error} : 'undef' ) );
+	}
+
 	$fw->teardown;
 	is_deeply( $fw->{test_data}, [ 'xdp-filter unload eth0', 'xdp-filter unload eth1' ],
 		'teardown unloads every interface' );

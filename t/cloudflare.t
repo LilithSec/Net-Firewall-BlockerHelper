@@ -63,6 +63,14 @@ my $user_endpoint = 'https://api.cloudflare.com/client/v4/user/firewall/access_r
 		'unban looks the rule up by target/value/notes and deletes it'
 	);
 
+	ok( $fw->{backend_obj}{cidr_supported}, 'cloudflare reports cidr_supported' );
+	$fw->ban_cidr( ban => '1.2.3.0/24' );
+	my %listed = map { $_ => 1 } $fw->list_cidr;
+	ok( $listed{'1.2.3.0/24'}, 'ban_cidr adds the cidr to list_cidr' );
+	$fw->unban_cidr( ban => '1.2.3.0/24' );
+	my %listed2 = map { $_ => 1 } $fw->list_cidr;
+	ok( !$listed2{'1.2.3.0/24'}, 'unban_cidr removes the cidr from list_cidr' );
+
 	is( $fw->check, 1, 'check reports healthy in testing mode' );
 	is_deeply(
 		$fw->{test_data},

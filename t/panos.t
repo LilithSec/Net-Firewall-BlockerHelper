@@ -45,6 +45,19 @@ sub urldecode {
 		'unban unregisters the IP' );
 
 	is_deeply( [ $fw->list ], ['dead::1'], 'list reflects the remaining ban' );
+
+	# CIDR support: the range registers/unregisters under the same tag
+	ok( $fw->{backend_obj}{cidr_supported}, 'the panos backend reports CIDR support' );
+
+	$fw->ban_cidr( ban => '1.2.3.0/24' );
+	like( urldecode( $fw->{test_data}[0]{content} ), qr{<register><entry ip="1\.2\.3\.0/24"><tag><member>blocklist</member>},
+		'ban_cidr registers the CIDR range with the tag' );
+	is_deeply( [ $fw->list_cidr ], ['1.2.3.0/24'], 'list_cidr reflects the banned CIDR range' );
+
+	$fw->unban_cidr( ban => '1.2.3.0/24' );
+	like( urldecode( $fw->{test_data}[0]{content} ), qr{<unregister><entry ip="1\.2\.3\.0/24">},
+		'unban_cidr unregisters the CIDR range' );
+	is_deeply( [ $fw->list_cidr ], [], 'list_cidr is empty after unban_cidr' );
 }
 
 # host and key are both required

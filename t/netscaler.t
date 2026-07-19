@@ -54,6 +54,13 @@ is( $fw->{test_data}[0]{url},
 	$base . '/policydataset_value_binding/derp_ssh?args=value:dead%3A%3A1',
 	'IPv6 IPs are percent encoded in the unban URL' );
 
+my $cidr_blocked = 0;
+eval { $fw->ban_cidr( ban => '1.2.3.0/24' ); };
+if ( defined( $fw->{error} ) && $fw->{error} == 29 ) { $cidr_blocked = 1; }
+if ( !$cidr_blocked ) {
+	die( 'ban_cidr did not set frontend error 29 cidrNotSupported... got ' . ( defined( $fw->{error} ) ? $fw->{error} : 'undef' ) );
+}
+
 is( $fw->check, 1, 'check reports healthy in testing mode' );
 is_deeply( $fw->{test_data}, [ { method => 'GET', url => $base } ], 'check probes the NITRO config API' );
 

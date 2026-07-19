@@ -36,6 +36,26 @@ BEGIN {
 	$fw->unban( ban => '1.2.3.4' );
 	like( $fw->{test_data}, qr{/ip firewall address-list remove \[find where list=kur_ssh address=1\.2\.3\.4\]},
 		'unban removes the matching address-list entry' );
+
+	ok( $fw->{backend_obj}->{cidr_supported}, 'backend reports cidr_supported' );
+
+	$fw->ban_cidr( ban => '1.2.3.0/24' );
+	is( $fw->{test_data},
+		"ssh admin\@10.0.0.1 '/ip firewall address-list add list=kur_ssh address=1.2.3.0/24'",
+		'IPv4 CIDR ban adds to /ip address-list' );
+
+	$fw->ban_cidr( ban => 'dead::/64' );
+	like( $fw->{test_data}, qr{/ipv6 firewall address-list add list=kur_ssh address=dead::/64},
+		'IPv6 CIDR ban adds to /ipv6 address-list' );
+
+	is_deeply( [ sort $fw->list_cidr ], [ '1.2.3.0/24', 'dead::/64' ], 'list_cidr holds both CIDR bans' );
+
+	$fw->unban_cidr( ban => '1.2.3.0/24' );
+	like( $fw->{test_data},
+		qr{/ip firewall address-list remove \[find where list=kur_ssh address=1\.2\.3\.0/24\]},
+		'CIDR unban removes the matching address-list entry' );
+
+	is_deeply( [ sort $fw->list_cidr ], ['dead::/64'], 'list_cidr drops the unbanned CIDR' );
 }
 
 # host is required

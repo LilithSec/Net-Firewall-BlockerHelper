@@ -154,6 +154,11 @@ sub new {
 				17 => 'teardownFailed',
 				24 => 'checkFailed',
 				25 => 'flushFailed',
+				26 => 'banCidrFailed',
+				27 => 'unbanCidrFailed',
+				28 => 'cidrItemNotCidr',
+				29 => 'cidrNotSupported',
+				30 => 'listCidrFailed',
 			},
 			fatal_flags      => {},
 			perror_not_fatal => 0,
@@ -388,6 +393,29 @@ sub _self_heal {
 	return;
 } ## end sub _self_heal
 
+=head2 _valid_cidr
+
+Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
+IPv6 CIDR range, that is an address followed by C</> and a prefix length that
+is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
+IPv6). Returns false otherwise.
+
+=cut
+
+sub _valid_cidr {
+	my ( $self, $cidr ) = @_;
+
+	return 0 if ( !defined($cidr) || ref($cidr) ne '' );
+
+	if ( $cidr =~ m!\A(.+)/([0-9]{1,3})\z! ) {
+		my ( $addr, $prefix ) = ( $1, $2 );
+		return 1 if ( $addr =~ /\A$IPv4_re\z/ && $prefix <= 32 );
+		return 1 if ( $addr =~ /\A$IPv6_re\z/ && $prefix <= 128 );
+	}
+
+	return 0;
+} ## end sub _valid_cidr
+
 =head2 ban
 
 Bans the IP.
@@ -441,6 +469,69 @@ sub ban {
 		return;
 	}
 } ## end sub ban
+
+=head2 ban_cidr
+
+Bans a CIDR range.
+
+Only backends whose underlying firewall can match on a network prefix support
+this. For backends that do not, the cidrNotSupported error is set. See the
+individual backends for which support it.
+
+    $fw_helper->ban_cidr(ban => '1.2.3.0/24');
+
+=cut
+
+sub ban_cidr {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+	$self->{test_data} = undef;
+
+	if ( !defined( $opts{ban} ) ) {
+		$self->{error}       = 9;
+		$self->{errorString} = 'Nothing specified for the value ban';
+		$self->warn;
+		return;
+	} elsif ( ref( $opts{ban} ) ne '' ) {
+		$self->{error}       = 28;
+		$self->{errorString} = 'Bad ref type for ban... ref is "' . ref( $opts{ban} ) . '"';
+		$self->warn;
+		return;
+	} elsif ( !$self->_valid_cidr( $opts{ban} ) ) {
+		$self->{error}       = 28;
+		$self->{errorString} = 'ban item,"' . $opts{ban} . '", does not appear to be a IPv4 or IPv6 CIDR';
+		$self->warn;
+		return;
+	}
+
+	if ( !defined( $self->{backend_obj} ) ) {
+		$self->{error}       = 26;
+		$self->{errorString} = 'No backend object present... init_backend has not been called';
+		$self->warn;
+		return;
+	}
+
+	if ( !$self->{backend_obj}->{cidr_supported} ) {
+		$self->{error}       = 29;
+		$self->{errorString} = 'the "' . $self->{backend} . '" backend does not support CIDR bans';
+		$self->warn;
+		return;
+	}
+
+	# lowercase so the same IPv6 CIDR in differing cases can't result in duplicate entries
+	$opts{ban} = lc( $opts{ban} );
+
+	$self->_self_heal(%opts);
+
+	eval { $self->{backend_obj}->ban_cidr( ban => $opts{ban} ); };
+	if ($@) {
+		$self->{error}       = 26;
+		$self->{errorString} = 'banning cidr item,"' . $opts{ban} . '", failed... ' . $@;
+		$self->warn;
+		return;
+	}
+} ## end sub ban_cidr
 
 =head2 unban
 
@@ -496,6 +587,68 @@ sub unban {
 	}
 } ## end sub unban
 
+=head2 unban_cidr
+
+Unbans a CIDR range.
+
+Only backends whose underlying firewall can match on a network prefix support
+this. For backends that do not, the cidrNotSupported error is set.
+
+    $fw_helper->unban_cidr(ban => '1.2.3.0/24');
+
+=cut
+
+sub unban_cidr {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+	$self->{test_data} = undef;
+
+	if ( !defined( $opts{ban} ) ) {
+		$self->{error}       = 9;
+		$self->{errorString} = 'Nothing specified for the value ban';
+		$self->warn;
+		return;
+	} elsif ( ref( $opts{ban} ) ne '' ) {
+		$self->{error}       = 28;
+		$self->{errorString} = 'Bad ref type for ban... ref is "' . ref( $opts{ban} ) . '"';
+		$self->warn;
+		return;
+	} elsif ( !$self->_valid_cidr( $opts{ban} ) ) {
+		$self->{error}       = 28;
+		$self->{errorString} = 'ban item,"' . $opts{ban} . '", does not appear to be a IPv4 or IPv6 CIDR';
+		$self->warn;
+		return;
+	}
+
+	if ( !defined( $self->{backend_obj} ) ) {
+		$self->{error}       = 27;
+		$self->{errorString} = 'No backend object present... init_backend has not been called';
+		$self->warn;
+		return;
+	}
+
+	if ( !$self->{backend_obj}->{cidr_supported} ) {
+		$self->{error}       = 29;
+		$self->{errorString} = 'the "' . $self->{backend} . '" backend does not support CIDR bans';
+		$self->warn;
+		return;
+	}
+
+	# lowercase so the same IPv6 CIDR in differing cases can't result in duplicate entries
+	$opts{ban} = lc( $opts{ban} );
+
+	$self->_self_heal(%opts);
+
+	eval { $self->{backend_obj}->unban_cidr( ban => $opts{ban} ); };
+	if ($@) {
+		$self->{error}       = 27;
+		$self->{errorString} = 'unbanning cidr item,"' . $opts{ban} . '", failed... ' . $@;
+		$self->warn;
+		return;
+	}
+} ## end sub unban_cidr
+
 =head2 list
 
 List banned IPs.
@@ -528,6 +681,40 @@ sub list {
 
 	return @banned;
 } ## end sub list
+
+=head2 list_cidr
+
+List banned CIDR ranges. Backends that do not support CIDR bans always return
+an empty list.
+
+    my @banned_cidrs = $fw_helper->list_cidr;
+
+=cut
+
+sub list_cidr {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+	$self->{test_data} = undef;
+
+	if ( !defined( $self->{backend_obj} ) ) {
+		$self->{error}       = 30;
+		$self->{errorString} = 'No backend object present... init_backend has not been called';
+		$self->warn;
+		return;
+	}
+
+	my @banned;
+	eval { @banned = $self->{backend_obj}->list_cidr; };
+	if ($@) {
+		$self->{error}       = 30;
+		$self->{errorString} = 'listing cidr bans failed... ' . $@;
+		$self->warn;
+		return;
+	}
+
+	return @banned;
+} ## end sub list_cidr
 
 =head2 re_init
 
@@ -754,6 +941,27 @@ The backend check raised an error.
 =head2 25, flushFailed
 
 Failed to flush the bans.
+
+=head2 26, banCidrFailed
+
+Failed to ban the CIDR range.
+
+=head2 27, unbanCidrFailed
+
+Failed to unban the CIDR range.
+
+=head2 28, cidrItemNotCidr
+
+The item to ban is not a CIDR range. Either wrong ref type or it is not an
+IPv4 or IPv6 address followed by a prefix length valid for its family.
+
+=head2 29, cidrNotSupported
+
+The selected backend does not support CIDR bans.
+
+=head2 30, listCidrFailed
+
+Failed to get a list of CIDR bans.
 
 =head1 AUTHOR
 

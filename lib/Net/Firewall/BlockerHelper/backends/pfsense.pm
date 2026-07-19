@@ -138,6 +138,11 @@ sub new {
 				27 => 'protocolsNotSupported',
 				30 => 'hostNotDefined',
 				31 => 'keyNotDefined',
+				32 => 'banCidrFailed',
+				33 => 'unbanCidrFailed',
+				34 => 'cidrItemNotCidr',
+				35 => 'cidrNotSupported',
+				36 => 'listCidrFailed',
 			},
 			fatal_flags      => {},
 			perror_not_fatal => 0,
@@ -149,9 +154,11 @@ sub new {
 		test_data    => undef,
 		prefix       => 'kur',
 		frontend_obj => undef,
-		inited       => 0,
-		banned       => {},
-		ua           => undef,
+		inited         => 0,
+		banned         => {},
+		banned_cidr    => {},
+		cidr_supported => 1,
+		ua             => undef,
 	};
 	bless $self;
 
@@ -314,7 +321,8 @@ sub _render {
 	my ( $self, $ips ) = @_;
 
 	if ( !defined($ips) ) {
-		$ips = [ sort( keys( %{ $self->{banned} } ) ) ];
+		# the alias holds both single IPs and CIDR ranges
+		$ips = [ sort( keys( %{ $self->{banned} } ), keys( %{ $self->{banned_cidr} } ) ) ];
 	}
 
 	return $self->_json->encode(
@@ -558,6 +566,194 @@ sub unban {
 	} ## end else [ if ( $self->{testing} )]
 } ## end sub unban
 
+=head2 _valid_cidr
+
+Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
+IPv6 CIDR range, that is an address followed by C</> and a prefix length that
+is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
+IPv6). Returns false otherwise.
+
+=cut
+
+sub _valid_cidr {
+	my ( $self, $cidr ) = @_;
+
+	return 0 if ( !defined($cidr) || ref($cidr) ne '' );
+
+	if ( $cidr =~ m!\A(.+)/([0-9]{1,3})\z! ) {
+		my ( $addr, $prefix ) = ( $1, $2 );
+		return 1 if ( $addr =~ /\A$IPv4_re\z/ && $prefix <= 32 );
+		return 1 if ( $addr =~ /\A$IPv6_re\z/ && $prefix <= 128 );
+	}
+
+	return 0;
+} ## end sub _valid_cidr
+
+=head2 ban_cidr
+
+Bans a CIDR range by adding it to the alias and applying the change. A pfSense
+host alias holds CIDR ranges in the same manner as single addresses.
+
+    $backend->ban_cidr(ban => '1.2.3.0/24');
+
+=cut
+
+sub ban_cidr {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( !$self->{inited} ) {
+		$self->{error}       = 1;
+		$self->{errorString} = 'backend has not been inited';
+		$self->warn;
+		return;
+	}
+
+	if ( !defined( $opts{ban} ) ) {
+		$self->{error}       = 9;
+		$self->{errorString} = 'Nothing specified for the value ban';
+		$self->warn;
+		return;
+	} elsif ( ref( $opts{ban} ) ne '' ) {
+		$self->{error}       = 34;
+		$self->{errorString} = 'Bad ref type for ban... ref is "' . ref( $opts{ban} ) . '"';
+		$self->warn;
+		return;
+	} elsif ( !$self->_valid_cidr( $opts{ban} ) ) {
+		$self->{error}       = 34;
+		$self->{errorString} = 'ban item,"' . $opts{ban} . '", does not appear to be a IPv4 or IPv6 CIDR';
+		$self->warn;
+		return;
+	}
+
+	# lowercase so the same IPv6 CIDR in differing cases can't result in duplicate entries
+	$opts{ban} = lc( $opts{ban} );
+
+	if ( $self->{banned_cidr}{ $opts{ban} } ) {
+		if ( $self->{testing} ) {
+			$self->{frontend_obj}->{test_data} = 'already banned';
+		}
+		return;
+	}
+
+	$self->{banned_cidr}{ $opts{ban} } = 1;
+
+	my $body = $self->_render;
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = [
+			{ method => 'PATCH', url => $self->_base . '/api/v2/firewall/alias', content => $body },
+			{ method => 'POST',  url => $self->_base . '/api/v2/firewall/apply' },
+		];
+	} else {
+		local $@;
+		eval {
+			$self->_request( 'PATCH', $self->_base . '/api/v2/firewall/alias', $body );
+			$self->_request( 'POST', $self->_base . '/api/v2/firewall/apply', '' );
+			1;
+		} or do {
+			delete( $self->{banned_cidr}{ $opts{ban} } );
+			$self->{error}       = 32;
+			$self->{errorString} = 'banning "' . $opts{ban} . '" failed... ' . $@;
+			$self->warn;
+			return;
+		};
+	} ## end else [ if ( $self->{testing} )]
+} ## end sub ban_cidr
+
+=head2 unban_cidr
+
+Unbans a CIDR range by removing it from the alias and applying the change.
+
+    $backend->unban_cidr(ban => '1.2.3.0/24');
+
+=cut
+
+sub unban_cidr {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( !$self->{inited} ) {
+		$self->{error}       = 1;
+		$self->{errorString} = 'backend has not been inited';
+		$self->warn;
+		return;
+	}
+
+	if ( !defined( $opts{ban} ) ) {
+		$self->{error}       = 9;
+		$self->{errorString} = 'Nothing specified for the value ban';
+		$self->warn;
+		return;
+	} elsif ( ref( $opts{ban} ) ne '' ) {
+		$self->{error}       = 34;
+		$self->{errorString} = 'Bad ref type for ban... ref is "' . ref( $opts{ban} ) . '"';
+		$self->warn;
+		return;
+	} elsif ( !$self->_valid_cidr( $opts{ban} ) ) {
+		$self->{error}       = 34;
+		$self->{errorString} = 'ban item,"' . $opts{ban} . '", does not appear to be a IPv4 or IPv6 CIDR';
+		$self->warn;
+		return;
+	}
+
+	# lowercase so the same IPv6 CIDR in differing cases can't result in duplicate entries
+	$opts{ban} = lc( $opts{ban} );
+
+	if ( !$self->{banned_cidr}{ $opts{ban} } ) {
+		if ( $self->{testing} ) {
+			$self->{frontend_obj}->{test_data} = 'not banned';
+		}
+		return;
+	}
+
+	delete( $self->{banned_cidr}{ $opts{ban} } );
+
+	my $body = $self->_render;
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = [
+			{ method => 'PATCH', url => $self->_base . '/api/v2/firewall/alias', content => $body },
+			{ method => 'POST',  url => $self->_base . '/api/v2/firewall/apply' },
+		];
+	} else {
+		local $@;
+		eval {
+			$self->_request( 'PATCH', $self->_base . '/api/v2/firewall/alias', $body );
+			$self->_request( 'POST', $self->_base . '/api/v2/firewall/apply', '' );
+			1;
+		} or do {
+			$self->{banned_cidr}{ $opts{ban} } = 1;
+			$self->{error}       = 33;
+			$self->{errorString} = 'unbanning "' . $opts{ban} . '" failed... ' . $@;
+			$self->warn;
+			return;
+		};
+	} ## end else [ if ( $self->{testing} )]
+} ## end sub unban_cidr
+
+=head2 list_cidr
+
+List banned CIDR ranges.
+
+    my @banned_cidrs = $backend->list_cidr;
+
+=cut
+
+sub list_cidr {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = 'list_cidr';
+	}
+
+	return keys( %{ $self->{banned_cidr} } );
+}
+
 =head2 list
 
 List banned IPs.
@@ -759,7 +955,8 @@ sub flush {
 		};
 	} ## end else [ if ( $self->{testing} )]
 
-	$self->{banned} = {};
+	$self->{banned}      = {};
+	$self->{banned_cidr} = {};
 } ## end sub flush
 
 =head1 ERROR CODES / FLAGS
@@ -783,10 +980,36 @@ fatal.
     23 initFailed
     24 checkFailed
     25 flushFailed
-    26 portsNotSupported
-    27 protocolsNotSupported
-    30 hostNotDefined
+    26 banCidrFailed
+    27 unbanCidrFailed
+    28 cidrItemNotCidr
+    29 cidrNotSupported
+    30 listCidrFailed
     31 keyNotDefined
+    40 portsNotSupported
+    41 protocolsNotSupported
+    42 hostNotDefined
+
+=head2 32, banCidrFailed
+
+Failed to ban the CIDR range.
+
+=head2 33, unbanCidrFailed
+
+Failed to unban the CIDR range.
+
+=head2 34, cidrItemNotCidr
+
+The item to ban is not a CIDR range. Either wrong ref type or it is not an
+IPv4 or IPv6 address followed by a prefix length valid for its family.
+
+=head2 35, cidrNotSupported
+
+The backend does not support CIDR bans.
+
+=head2 36, listCidrFailed
+
+Failed to get a list of CIDR bans.
 
 =head1 AUTHOR
 

@@ -36,6 +36,18 @@ is_deeply(
 $fw->unban( ban => '1.2.3.4' );
 is( $fw->{test_data}, 'ip route del unreachable 1.2.3.4', 'unban deletes the route' );
 
+ok( $fw->{backend_obj}->{cidr_supported}, 'cidr supported' );
+
+$fw->ban_cidr( ban => '1.2.3.0/24' );
+is_deeply( $fw->{test_data}, ['ip route add unreachable 1.2.3.0/24'], 'ban_cidr adds an IPv4 range route' );
+
+is_deeply( [ $fw->list_cidr ], ['1.2.3.0/24'], 'list_cidr shows the range' );
+
+$fw->unban_cidr( ban => '1.2.3.0/24' );
+is( $fw->{test_data}, 'ip route del unreachable 1.2.3.0/24', 'unban_cidr deletes the range route' );
+
+is( scalar( $fw->list_cidr ), 0, 'list_cidr empty after unban' );
+
 $fw->re_init;
 is_deeply( $fw->{test_data}, ['ip -6 route add unreachable dead::1'], 're_init re-adds the remaining ban' );
 

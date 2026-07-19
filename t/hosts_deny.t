@@ -70,6 +70,11 @@ sub slurp {
 		"# BEGIN Net::Firewall::BlockerHelper derp_all\nALL : 9.9.9.9\n# END Net::Firewall::BlockerHelper derp_all\n",
 		'default daemon ALL and marker tag from prefix_name'
 	);
+
+	my $cidr_blocked = 0;
+	eval { $fw->ban_cidr( ban => '1.2.3.0/24' ); };
+	if ( $fw->{error} == 29 ) { $cidr_blocked = 1; }
+	ok( $cidr_blocked, 'ban_cidr sets error 29 cidrNotSupported' );
 }
 
 done_testing();

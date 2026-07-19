@@ -45,6 +45,23 @@ BEGIN {
 	is( $fw->{test_data}[1]{method}, 'DELETE', 'unban then deletes' );
 	is( $fw->{test_data}[1]{url}, 'https://api.fastly.com/service/SID/acl/AID/entry/<id>',
 		'unban DELETE targets the entry by id' );
+
+	# CIDR support
+	ok( $fw->{backend_obj}{cidr_supported}, 'fastly reports cidr_supported' );
+
+	$fw->ban_cidr( ban => '1.2.3.0/24' );
+	is( $fw->{test_data}[0]{method}, 'POST', 'ban_cidr does a POST like ban' );
+	is( $fw->{test_data}[0]{url}, 'https://api.fastly.com/service/SID/acl/AID/entry',
+		'ban_cidr posts to the entry endpoint' );
+	is( $fw->{test_data}[0]{content}, '{"ip":"1.2.3.0","subnet":24}',
+		'ban_cidr body splits the CIDR into ip and subnet' );
+
+	my %listed = map { $_ => 1 } $fw->list_cidr;
+	ok( $listed{'1.2.3.0/24'}, 'ban_cidr adds the CIDR to list_cidr' );
+
+	$fw->unban_cidr( ban => '1.2.3.0/24' );
+	my %listed2 = map { $_ => 1 } $fw->list_cidr;
+	ok( !$listed2{'1.2.3.0/24'}, 'unban_cidr removes the CIDR from list_cidr' );
 }
 
 # token, service, and acl are each required

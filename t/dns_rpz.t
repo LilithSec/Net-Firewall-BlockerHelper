@@ -33,6 +33,12 @@ BEGIN {
 	like( $fw->{test_data},
 		qr{update delete 32\.4\.3\.2\.1\.rpz-client-ip\.rpz\.example\.org IN CNAME \.},
 		'unban deletes the record' );
+
+	# CIDR bans are not supported by this backend; ban_cidr must set error 29
+	my $cidr_blocked = 0;
+	eval { $fw->ban_cidr( ban => '1.2.3.0/24' ); };
+	if ( $fw->{error} == 29 ) { $cidr_blocked = 1; }
+	ok( $cidr_blocked, 'ban_cidr sets error 29 cidrNotSupported' );
 }
 
 # the ip trigger and a server line

@@ -35,6 +35,17 @@ BEGIN {
 
 	$fw->unban( ban => '5.6.7.8' );
 	unlike( $fw->{test_data}, qr{5\.6\.7\.8}, 'unban drops that range' );
+
+	ok( $fw->{backend_obj}{cidr_supported}, 'cloud_armor reports cidr_supported' );
+
+	$fw->ban_cidr( ban => '1.2.3.0/24' );
+	like( $fw->{test_data}, qr{1\.2\.3\.0/24}, 'ban_cidr adds the CIDR to src-ip-ranges' );
+	my %listed = map { $_ => 1 } $fw->list_cidr;
+	ok( $listed{'1.2.3.0/24'}, 'ban_cidr adds the CIDR to the cidr list' );
+
+	$fw->unban_cidr( ban => '1.2.3.0/24' );
+	my %listed2 = map { $_ => 1 } $fw->list_cidr;
+	ok( !$listed2{'1.2.3.0/24'}, 'unban_cidr removes the CIDR from the cidr list' );
 }
 
 # custom priority and project

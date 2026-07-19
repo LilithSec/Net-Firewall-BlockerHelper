@@ -129,6 +129,11 @@ sub new {
 				30 => 'hostNotDefined',
 				31 => 'userNotDefined',
 				32 => 'passwordNotDefined',
+				33 => 'banCidrFailed',
+				34 => 'unbanCidrFailed',
+				35 => 'cidrItemNotCidr',
+				36 => 'cidrNotSupported',
+				37 => 'listCidrFailed',
 			},
 			fatal_flags      => {},
 			perror_not_fatal => 0,
@@ -141,9 +146,11 @@ sub new {
 		prefix       => 'kur',
 		name         => undef,
 		frontend_obj => undef,
-		inited       => 0,
-		banned       => {},
-		ua           => undef,
+		inited         => 0,
+		banned         => {},
+		banned_cidr    => {},
+		cidr_supported => 1,
+		ua             => undef,
 	};
 	bless $self;
 
@@ -550,6 +557,213 @@ sub unban {
 	delete( $self->{banned}{ $opts{ban} } );
 } ## end sub unban
 
+=head2 _valid_cidr
+
+Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
+IPv6 CIDR range, that is an address followed by C</> and a prefix length that
+is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
+IPv6). Returns false otherwise.
+
+=cut
+
+sub _valid_cidr {
+	my ( $self, $cidr ) = @_;
+
+	return 0 if ( !defined($cidr) || ref($cidr) ne '' );
+
+	if ( $cidr =~ m!\A(.+)/([0-9]{1,3})\z! ) {
+		my ( $addr, $prefix ) = ( $1, $2 );
+		return 1 if ( $addr =~ /\A$IPv4_re\z/ && $prefix <= 32 );
+		return 1 if ( $addr =~ /\A$IPv6_re\z/ && $prefix <= 128 );
+	}
+
+	return 0;
+} ## end sub _valid_cidr
+
+=head2 _ban_cidr_setlines
+
+Internal helper. Returns the set command lines (arrayref) that add the passed
+CIDR range to the global address book and address-set. The CIDR is used
+verbatim as the address prefix, so the address object already carries its own
+prefix length rather than a per-host /32 or /128 mask.
+
+=cut
+
+sub _ban_cidr_setlines {
+	my ( $self, $cidr ) = @_;
+
+	my $obj = $self->_obj_name($cidr);
+
+	return [
+		'set security address-book global address ' . $obj . ' ' . $cidr,
+		'set security address-book global address-set ' . $self->{options}{address_set} . ' address ' . $obj,
+	];
+} ## end sub _ban_cidr_setlines
+
+=head2 ban_cidr
+
+Bans a CIDR range by adding it to the global address book and address-set, then
+committing.
+
+    $backend->ban_cidr(ban => '1.2.3.0/24');
+
+=cut
+
+sub ban_cidr {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( !$self->{inited} ) {
+		$self->{error}       = 1;
+		$self->{errorString} = 'backend has not been inited';
+		$self->warn;
+		return;
+	}
+
+	if ( !defined( $opts{ban} ) ) {
+		$self->{error}       = 9;
+		$self->{errorString} = 'Nothing specified for the value ban';
+		$self->warn;
+		return;
+	} elsif ( ref( $opts{ban} ) ne '' ) {
+		$self->{error}       = 35;
+		$self->{errorString} = 'Bad ref type for ban... ref is "' . ref( $opts{ban} ) . '"';
+		$self->warn;
+		return;
+	} elsif ( !$self->_valid_cidr( $opts{ban} ) ) {
+		$self->{error}       = 35;
+		$self->{errorString} = 'ban item,"' . $opts{ban} . '", does not appear to be a IPv4 or IPv6 CIDR';
+		$self->warn;
+		return;
+	}
+
+	# lowercase so the same IPv6 CIDR in differing cases can't result in duplicate entries
+	$opts{ban} = lc( $opts{ban} );
+
+	if ( $self->{banned_cidr}{ $opts{ban} } ) {
+		if ( $self->{testing} ) {
+			$self->{frontend_obj}->{test_data} = 'already banned';
+		}
+		return;
+	}
+
+	my $setlines = $self->_ban_cidr_setlines( $opts{ban} );
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = [
+			{ method => 'POST', url => $self->_url, content => $self->_load_body($setlines) },
+			{ method => 'POST', url => $self->_url, content => $self->_commit_body },
+		];
+	} else {
+		local $@;
+		eval {
+			$self->_request( $self->_load_body($setlines) );
+			$self->_request( $self->_commit_body );
+			1;
+		} or do {
+			$self->{error}       = 33;
+			$self->{errorString} = 'banning "' . $opts{ban} . '" failed... ' . $@;
+			$self->warn;
+			return;
+		};
+	}
+
+	$self->{banned_cidr}{ $opts{ban} } = 1;
+} ## end sub ban_cidr
+
+=head2 unban_cidr
+
+Unbans a CIDR range by deleting its address book object, then committing.
+Deleting the address also removes it from the address-set.
+
+    $backend->unban_cidr(ban => '1.2.3.0/24');
+
+=cut
+
+sub unban_cidr {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( !$self->{inited} ) {
+		$self->{error}       = 1;
+		$self->{errorString} = 'backend has not been inited';
+		$self->warn;
+		return;
+	}
+
+	if ( !defined( $opts{ban} ) ) {
+		$self->{error}       = 9;
+		$self->{errorString} = 'Nothing specified for the value ban';
+		$self->warn;
+		return;
+	} elsif ( ref( $opts{ban} ) ne '' ) {
+		$self->{error}       = 35;
+		$self->{errorString} = 'Bad ref type for ban... ref is "' . ref( $opts{ban} ) . '"';
+		$self->warn;
+		return;
+	} elsif ( !$self->_valid_cidr( $opts{ban} ) ) {
+		$self->{error}       = 35;
+		$self->{errorString} = 'ban item,"' . $opts{ban} . '", does not appear to be a IPv4 or IPv6 CIDR';
+		$self->warn;
+		return;
+	}
+
+	# lowercase so the same IPv6 CIDR in differing cases can't result in duplicate entries
+	$opts{ban} = lc( $opts{ban} );
+
+	if ( !$self->{banned_cidr}{ $opts{ban} } ) {
+		if ( $self->{testing} ) {
+			$self->{frontend_obj}->{test_data} = 'not banned';
+		}
+		return;
+	}
+
+	my $setlines = $self->_unban_setlines( $opts{ban} );
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = [
+			{ method => 'POST', url => $self->_url, content => $self->_load_body($setlines) },
+			{ method => 'POST', url => $self->_url, content => $self->_commit_body },
+		];
+	} else {
+		local $@;
+		eval {
+			$self->_request( $self->_load_body($setlines) );
+			$self->_request( $self->_commit_body );
+			1;
+		} or do {
+			$self->{error}       = 34;
+			$self->{errorString} = 'unbanning "' . $opts{ban} . '" failed... ' . $@;
+			$self->warn;
+			return;
+		};
+	}
+
+	delete( $self->{banned_cidr}{ $opts{ban} } );
+} ## end sub unban_cidr
+
+=head2 list_cidr
+
+List banned CIDR ranges.
+
+    my @banned_cidrs = $backend->list_cidr;
+
+=cut
+
+sub list_cidr {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = 'list_cidr';
+	}
+
+	return keys( %{ $self->{banned_cidr} } );
+}
+
 =head2 list
 
 List banned IPs.
@@ -620,6 +834,30 @@ sub re_init {
 		}
 	} ## end foreach my $item ( keys( %{ ...}))
 
+	# CIDR ranges carry their own prefix, so they use the CIDR set lines
+	foreach my $item ( keys( %{ $self->{banned_cidr} } ) ) {
+		my $setlines = $self->_ban_cidr_setlines($item);
+
+		if ( $self->{testing} ) {
+			push(
+				@re_init_test_data,
+				{ method => 'POST', url => $self->_url, content => $self->_load_body($setlines) },
+				{ method => 'POST', url => $self->_url, content => $self->_commit_body },
+			);
+		} else {
+			local $@;
+			eval {
+				$self->_request( $self->_load_body($setlines) );
+				$self->_request( $self->_commit_body );
+				1;
+			} or do {
+				$self->{error}       = 33;
+				$self->{errorString} = 'banning "' . $item . '" failed... ' . $@;
+				$self->warn;
+			};
+		}
+	} ## end foreach my $item ( keys( %{ ...}))
+
 	if ( $self->{testing} ) {
 		$self->{frontend_obj}->{test_data} = \@re_init_test_data;
 	}
@@ -643,7 +881,7 @@ sub teardown {
 	$self->{inited} = 0;
 
 	my @requests;
-	foreach my $item ( sort( keys( %{ $self->{banned} } ) ) ) {
+	foreach my $item ( sort( keys( %{ $self->{banned} } ), keys( %{ $self->{banned_cidr} } ) ) ) {
 		my $setlines = $self->_unban_setlines($item);
 		if ( $self->{testing} ) {
 			push(
@@ -727,7 +965,7 @@ sub flush {
 	}
 
 	my @requests;
-	foreach my $item ( sort( keys( %{ $self->{banned} } ) ) ) {
+	foreach my $item ( sort( keys( %{ $self->{banned} } ), keys( %{ $self->{banned_cidr} } ) ) ) {
 		my $setlines = $self->_unban_setlines($item);
 		if ( $self->{testing} ) {
 			push(
@@ -753,7 +991,8 @@ sub flush {
 		$self->{frontend_obj}->{test_data} = \@requests;
 	}
 
-	$self->{banned} = {};
+	$self->{banned}      = {};
+	$self->{banned_cidr} = {};
 } ## end sub flush
 
 =head1 ERROR CODES / FLAGS
@@ -777,11 +1016,37 @@ fatal.
     23 initFailed
     24 checkFailed
     25 flushFailed
-    26 portsNotSupported
-    27 protocolsNotSupported
-    30 hostNotDefined
+    26 banCidrFailed
+    27 unbanCidrFailed
+    28 cidrItemNotCidr
+    29 cidrNotSupported
+    30 listCidrFailed
     31 userNotDefined
     32 passwordNotDefined
+    33 portsNotSupported
+    34 protocolsNotSupported
+    35 hostNotDefined
+
+=head2 33, banCidrFailed
+
+Failed to ban the CIDR range.
+
+=head2 34, unbanCidrFailed
+
+Failed to unban the CIDR range.
+
+=head2 35, cidrItemNotCidr
+
+The item to ban is not a CIDR range. Either wrong ref type or it is not an
+IPv4 or IPv6 address followed by a prefix length valid for its family.
+
+=head2 36, cidrNotSupported
+
+The backend does not support CIDR bans.
+
+=head2 37, listCidrFailed
+
+Failed to get a list of CIDR bans.
 
 =head1 AUTHOR
 

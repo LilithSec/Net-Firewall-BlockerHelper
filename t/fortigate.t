@@ -50,6 +50,23 @@ BEGIN {
 	is( $fw->{test_data}[1]{url},
 		'https://fw.example/api/v2/cmdb/firewall/address/kur_ssh_1-2-3-4?vdom=root',
 		'unban then deletes the address object' );
+
+	# CIDR support
+	ok( $fw->{backend_obj}{cidr_supported}, 'cidr is supported' );
+	$fw->ban_cidr( ban => '1.2.3.0/24' );
+	is( scalar( @{ $fw->{test_data} } ), 2, 'ban_cidr is two requests' );
+	is( $fw->{test_data}[0]{url}, 'https://fw.example/api/v2/cmdb/firewall/address?vdom=root',
+		'ban_cidr first creates a firewall address' );
+	is( $fw->{test_data}[0]{content}, '{"name":"kur_ssh_1-2-3-0-24","subnet":"1.2.3.0/24"}',
+		'address object is the subnet with a sanitized name' );
+	is( $fw->{test_data}[1]{url}, 'https://fw.example/api/v2/cmdb/firewall/addrgrp/kur_ssh/member?vdom=root',
+		'ban_cidr then adds it to the group member table' );
+	is( $fw->{test_data}[1]{content}, '{"name":"kur_ssh_1-2-3-0-24"}', 'member references the address by name' );
+	my %listed = map { $_ => 1 } $fw->{backend_obj}->list_cidr;
+	ok( $listed{'1.2.3.0/24'}, 'list_cidr contains the banned CIDR' );
+	$fw->unban_cidr( ban => '1.2.3.0/24' );
+	%listed = map { $_ => 1 } $fw->{backend_obj}->list_cidr;
+	ok( !$listed{'1.2.3.0/24'}, 'list_cidr no longer contains the CIDR after unban_cidr' );
 }
 
 # custom group names, no vdom

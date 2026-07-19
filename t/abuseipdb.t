@@ -37,6 +37,13 @@ BEGIN {
 	$fw->unban( ban => '1.2.3.4' );
 	is( $fw->{test_data}, 'unban is internal only', 'unban makes no API call' );
 
+	my $cidr_blocked = 0;
+	eval { $fw->ban_cidr( ban => '1.2.3.0/24' ); };
+	if ( defined( $fw->{error} ) && $fw->{error} == 29 ) { $cidr_blocked = 1; }
+	if ( !$cidr_blocked ) {
+		die( 'ban_cidr did not set frontend error 29 cidrNotSupported... got ' . ( defined( $fw->{error} ) ? $fw->{error} : 'undef' ) );
+	}
+
 	my @banned = sort( $fw->list );
 	is_deeply( \@banned, ['dead::1'], 'unban removed the IP from the ban book' );
 

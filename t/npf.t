@@ -34,6 +34,14 @@ is( $fw->{test_data}, 'already banned', 'double ban short-circuits' );
 $fw->unban( ban => 'dead::1' );
 is( $fw->{test_data}, 'npfctl table derp_ssh rem dead::1', 'unban removes from the table' );
 
+ok( $fw->{backend_obj}->{cidr_supported}, 'cidr supported' );
+$fw->ban_cidr( ban => '1.2.3.0/24' );
+is_deeply( $fw->{test_data}, ['npfctl table derp_ssh add 1.2.3.0/24'], 'ban_cidr adds the range' );
+is_deeply( [ $fw->list_cidr ], ['1.2.3.0/24'], 'list_cidr shows the range' );
+$fw->unban_cidr( ban => '1.2.3.0/24' );
+is( $fw->{test_data}, 'npfctl table derp_ssh rem 1.2.3.0/24', 'unban_cidr removes the range' );
+is( scalar( $fw->list_cidr ), 0, 'list_cidr empty after unban' );
+
 is( $fw->check, 1, 'check reports healthy in testing mode' );
 is_deeply( $fw->{test_data}, ['npfctl table derp_ssh list'], 'check probes the table' );
 

@@ -47,6 +47,35 @@ BEGIN {
 	is( $fw->{test_data}{content}, undef, 'teardown signals file removal (content undef)' );
 }
 
+# --- CIDR ban/unban rendered into the same file ---
+{
+	my $fw = Net::Firewall::BlockerHelper->new(
+		backend => 'file_reload',
+		name    => 'bl',
+		testing => 1,
+		options => {
+			file   => '/etc/nginx/blocklist.conf',
+			format => 'deny %%%BAN%%%;',
+			reload => 'nginx -s reload',
+		},
+	);
+	$fw->init_backend;
+
+	ok( $fw->{backend_obj}->{cidr_supported}, 'the backend reports cidr_supported' );
+
+	$fw->ban_cidr( ban => '1.2.3.0/24' );
+	is( $fw->{test_data}{content}, "deny 1.2.3.0/24;\n", 'ban_cidr renders the formatted CIDR line' );
+
+	my @banned_cidr = $fw->list_cidr;
+	is_deeply( [ sort @banned_cidr ], ['1.2.3.0/24'], 'list_cidr returns the banned CIDR' );
+
+	$fw->unban_cidr( ban => '1.2.3.0/24' );
+	is( $fw->{test_data}{content}, "\n", 'unban_cidr removes the CIDR line' );
+
+	@banned_cidr = $fw->list_cidr;
+	is_deeply( [ sort @banned_cidr ], [], 'list_cidr is empty after unban_cidr' );
+}
+
 # --- header/footer wrapping ---
 {
 	my $fw = Net::Firewall::BlockerHelper->new(

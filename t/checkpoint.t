@@ -35,6 +35,25 @@ BEGIN {
 	like( $fw->{test_data}[0]{url}, qr{/web_api/delete-host$}, 'unban deletes the host' );
 	like( $fw->{test_data}[0]{content}, qr/"name":"kur_ssh_1-2-3-4"/, 'delete references the object name' );
 	like( $fw->{test_data}[1]{url}, qr{/web_api/publish$}, 'then publishes' );
+
+	# CIDR bans mirror single-IP bans, adding a host object then publishing
+	ok( $fw->{backend_obj}->{cidr_supported}, 'the checkpoint backend supports CIDR bans' );
+
+	$fw->ban_cidr( ban => '1.2.3.0/24' );
+	is( scalar( @{ $fw->{test_data} } ), 2, 'ban_cidr is add-host then publish' );
+	like( $fw->{test_data}[0]{url},     qr{/web_api/add-host$}, 'ban_cidr first adds a host' );
+	like( $fw->{test_data}[0]{content}, qr{"ip-address":"1\.2\.3\.0/24"}, 'host carries the CIDR' );
+	like( $fw->{test_data}[1]{url},     qr{/web_api/publish$}, 'then publishes' );
+
+	my @cidr_after_ban = $fw->list_cidr;
+	is_deeply( [ sort @cidr_after_ban ], ['1.2.3.0/24'], 'list_cidr contains the CIDR after ban_cidr' );
+
+	$fw->unban_cidr( ban => '1.2.3.0/24' );
+	like( $fw->{test_data}[0]{url}, qr{/web_api/delete-host$}, 'unban_cidr deletes the host' );
+	like( $fw->{test_data}[1]{url}, qr{/web_api/publish$}, 'then publishes' );
+
+	my @cidr_after_unban = $fw->list_cidr;
+	is_deeply( [ sort @cidr_after_unban ], [], 'list_cidr is empty after unban_cidr' );
 }
 
 # host/user/password are all required

@@ -118,6 +118,11 @@ eval {
 		die('$backend_obj->{inited} true when it should not be');
 	}
 
+	my $cidr_blocked = 0;
+	eval { $fw_helper->ban_cidr( ban => '1.2.3.0/24' ); };
+	if ( $fw_helper->{error} == 29 ) { $cidr_blocked = 1; }
+	if ( !$cidr_blocked ) { die('ban_cidr did not set error 29 cidrNotSupported'); }
+
 	$worked = 1;
 };
 ok( $worked eq '1', 'iptables test' ) or diag( "iptables test died with ... " . $@ );

@@ -144,6 +144,11 @@ sub new {
 				21 => 'announceTypeInvalid',
 				24 => 'checkFailed',
 				25 => 'flushFailed',
+				26 => 'banCidrFailed',
+				27 => 'unbanCidrFailed',
+				28 => 'cidrItemNotCidr',
+				29 => 'cidrNotSupported',
+				30 => 'listCidrFailed',
 			},
 			fatal_flags      => {},
 			perror_not_fatal => 0,
@@ -156,8 +161,10 @@ sub new {
 		prefix       => 'kur',
 		name         => undef,
 		frontend_obj => undef,
-		inited       => 0,
-		banned       => {},
+		inited         => 0,
+		banned         => {},
+		banned_cidr    => {},
+		cidr_supported => 1,
 	};
 	bless $self;
 
@@ -300,6 +307,88 @@ sub _route_command {
 
 	return $self->{options}{exabgpcli_cmd} . ' ' . $route;
 } ## end sub _route_command
+
+=head2 _route_command_cidr
+
+Internal helper. Like L</_route_command> but for a CIDR range. The passed
+value is already an address/prefix, so it is announced/withdrawn verbatim
+rather than having a host mask appended, with the family determined from the
+address portion of the range.
+
+=cut
+
+sub _route_command_cidr {
+	my ( $self, $verb, $cidr ) = @_;
+
+	my $addr = ( $cidr =~ m!\A(.+)/[0-9]{1,3}\z! ) ? $1 : $cidr;
+	my $is_v4 = ( $addr =~ /\A$IPv4_re\z/ ) ? 1 : 0;
+	my $nh    = $is_v4 ? $self->{options}{next_hop} : $self->{options}{next_hop6};
+	my $extra = ( defined( $self->{options}{extra} ) && $self->{options}{extra} ne '' ) ? $self->{options}{extra} : '';
+	my $prefix      = $cidr;
+	my $is_flowspec = ( $self->{options}{announce_type} eq 'flowspec' ) ? 1 : 0;
+
+	if ( $self->{options}{driver} eq 'frr' ) {
+		# frr injects a blackhole static route via vtysh; a redistribute-static
+		# route-map on the router tags it with the blackhole community for BGP
+		my $keyword = $is_v4 ? 'ip route' : 'ipv6 route';
+		my $line = ( $verb eq 'announce' ? '' : 'no ' ) . $keyword . ' ' . $prefix . ' blackhole';
+		return $self->{options}{vtysh_cmd} . " -c 'configure terminal' -c '" . $line . "'";
+	}
+
+	if ( $self->{options}{driver} eq 'gobgp' ) {
+		my $op = ( $verb eq 'announce' ) ? 'add' : 'del';
+
+		if ($is_flowspec) {
+			# gobgp global rib add|del -a ipv4-flowspec match source <prefix> then discard
+			my $afi = $is_v4 ? 'ipv4-flowspec' : 'ipv6-flowspec';
+			return
+				  $self->{options}{gobgp_cmd}
+				. ' global rib '
+				. $op
+				. ' -a '
+				. $afi
+				. ' match source '
+				. $prefix
+				. ' then discard';
+		} ## end if ($is_flowspec)
+
+		# gobgp global rib add|del <prefix> [nexthop ..] [community ..] -a <afi>
+		my $afi = $is_v4 ? 'ipv4' : 'ipv6';
+		my $cmd = $self->{options}{gobgp_cmd} . ' global rib ' . $op . ' ' . $prefix;
+
+		# a withdrawal matches on prefix alone; attributes are only needed to add
+		if ( $op eq 'add' ) {
+			$cmd .= ' nexthop ' . $nh . ' community ' . $self->{options}{community};
+			$cmd .= ' ' . $extra if ( $extra ne '' );
+		}
+		$cmd .= ' -a ' . $afi;
+
+		return $cmd;
+	} ## end if ( $self->{options}{driver...})
+
+	# exabgp driver
+	if ($is_flowspec) {
+		# exabgpcli 'announce|withdraw flow route { match { source <prefix>; } then { discard; } }'
+		return
+			  $self->{options}{exabgpcli_cmd} . ' '
+			. $verb
+			. ' flow route { match { source '
+			. $prefix
+			. '; } then { discard; } }';
+	} ## end if ($is_flowspec)
+
+	# exabgp rtbh: exabgpcli 'announce|withdraw route <prefix> next-hop .. community [..]'
+	my $route
+		= $verb
+		. ' route '
+		. $prefix
+		. ' next-hop '
+		. $nh
+		. ' community [' . $self->{options}{community} . ']';
+	$route .= ' ' . $extra if ( $extra ne '' );
+
+	return $self->{options}{exabgpcli_cmd} . ' ' . $route;
+} ## end sub _route_command_cidr
 
 =head2 _check_command
 
@@ -478,6 +567,178 @@ sub unban {
 	delete( $self->{banned}{ $opts{ban} } );
 } ## end sub unban
 
+=head2 _valid_cidr
+
+Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
+IPv6 CIDR range, that is an address followed by C</> and a prefix length that
+is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
+IPv6). Returns false otherwise.
+
+=cut
+
+sub _valid_cidr {
+	my ( $self, $cidr ) = @_;
+
+	return 0 if ( !defined($cidr) || ref($cidr) ne '' );
+
+	if ( $cidr =~ m!\A(.+)/([0-9]{1,3})\z! ) {
+		my ( $addr, $prefix ) = ( $1, $2 );
+		return 1 if ( $addr =~ /\A$IPv4_re\z/ && $prefix <= 32 );
+		return 1 if ( $addr =~ /\A$IPv6_re\z/ && $prefix <= 128 );
+	}
+
+	return 0;
+} ## end sub _valid_cidr
+
+=head2 ban_cidr
+
+Announces a blackhole route for a CIDR range. The range is announced verbatim
+rather than as a host route.
+
+    $fw_helper->ban_cidr( ban => '1.2.3.0/24' );
+
+=cut
+
+sub ban_cidr {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( !$self->{inited} ) {
+		$self->{error}       = 1;
+		$self->{errorString} = 'backend has not been inited';
+		$self->warn;
+		return;
+	}
+
+	if ( !defined( $opts{ban} ) ) {
+		$self->{error}       = 9;
+		$self->{errorString} = 'Nothing specified for the value ban';
+		$self->warn;
+		return;
+	} elsif ( ref( $opts{ban} ) ne '' ) {
+		$self->{error}       = 28;
+		$self->{errorString} = 'Bad ref type for ban... ref is "' . ref( $opts{ban} ) . '"';
+		$self->warn;
+		return;
+	} elsif ( !$self->_valid_cidr( $opts{ban} ) ) {
+		$self->{error}       = 28;
+		$self->{errorString} = 'ban item,"' . $opts{ban} . '", does not appear to be a IPv4 or IPv6 CIDR';
+		$self->warn;
+		return;
+	}
+
+	# lowercase so the same IPv6 CIDR in differing cases can't result in duplicate entries
+	$opts{ban} = lc( $opts{ban} );
+
+	if ( $self->{banned_cidr}{ $opts{ban} } ) {
+		if ( $self->{testing} ) {
+			$self->{frontend_obj}->{test_data} = 'already banned';
+		}
+		return;
+	}
+
+	my $command = $self->_route_command_cidr( 'announce', $opts{ban} );
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = $command;
+	} else {
+		my $output = `$command 2>&1`;
+		if ( $? != 0 ) {
+			$self->{error} = 26;
+			$self->{errorString}
+				= 'ban failed. non-zero exit code for the command... "' . $command . '"... output... ' . $output;
+			$self->warn;
+		}
+	}
+
+	$self->{banned_cidr}{ $opts{ban} } = 1;
+} ## end sub ban_cidr
+
+=head2 unban_cidr
+
+Withdraws the blackhole route for a CIDR range.
+
+    $fw_helper->unban_cidr( ban => '1.2.3.0/24' );
+
+=cut
+
+sub unban_cidr {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( !$self->{inited} ) {
+		$self->{error}       = 1;
+		$self->{errorString} = 'backend has not been inited';
+		$self->warn;
+		return;
+	}
+
+	if ( !defined( $opts{ban} ) ) {
+		$self->{error}       = 9;
+		$self->{errorString} = 'Nothing specified for the value ban';
+		$self->warn;
+		return;
+	} elsif ( ref( $opts{ban} ) ne '' ) {
+		$self->{error}       = 28;
+		$self->{errorString} = 'Bad ref type for ban... ref is "' . ref( $opts{ban} ) . '"';
+		$self->warn;
+		return;
+	} elsif ( !$self->_valid_cidr( $opts{ban} ) ) {
+		$self->{error}       = 28;
+		$self->{errorString} = 'ban item,"' . $opts{ban} . '", does not appear to be a IPv4 or IPv6 CIDR';
+		$self->warn;
+		return;
+	}
+
+	# lowercase so the same IPv6 CIDR in differing cases can't result in duplicate entries
+	$opts{ban} = lc( $opts{ban} );
+
+	if ( !$self->{banned_cidr}{ $opts{ban} } ) {
+		if ( $self->{testing} ) {
+			$self->{frontend_obj}->{test_data} = 'not banned';
+		}
+		return;
+	}
+
+	my $command = $self->_route_command_cidr( 'withdraw', $opts{ban} );
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = $command;
+	} else {
+		my $output = `$command 2>&1`;
+		if ( $? != 0 ) {
+			$self->{error} = 27;
+			$self->{errorString}
+				= 'unban failed. non-zero exit code for the command... "' . $command . '"... output... ' . $output;
+			$self->warn;
+		}
+	}
+
+	delete( $self->{banned_cidr}{ $opts{ban} } );
+} ## end sub unban_cidr
+
+=head2 list_cidr
+
+List banned CIDR ranges.
+
+    my @banned_cidrs = $fw_helper->list_cidr;
+
+=cut
+
+sub list_cidr {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = 'list_cidr';
+	}
+
+	return keys( %{ $self->{banned_cidr} } );
+}
+
 =head2 list
 
 List banned IPs.
@@ -542,6 +803,21 @@ sub re_init {
 		}
 	} ## end foreach my $item ( keys( %{ ...}))
 
+	foreach my $item ( keys( %{ $self->{banned_cidr} } ) ) {
+		my $command = $self->_route_command_cidr( 'announce', $item );
+		if ( $self->{testing} ) {
+			push( @re_init_test_data, $command );
+		} else {
+			my $output = `$command 2>&1`;
+			if ( $? != 0 ) {
+				$self->{error} = 26;
+				$self->{errorString}
+					= 'ban failed. non-zero exit code for the command... "' . $command . '"... output... ' . $output;
+				$self->warn;
+			}
+		}
+	} ## end foreach my $item ( keys( %{ ...}))
+
 	if ( $self->{testing} ) {
 		$self->{frontend_obj}->{test_data} = \@re_init_test_data;
 	}
@@ -565,6 +841,9 @@ sub teardown {
 	my @commands;
 	foreach my $item ( keys( %{ $self->{banned} } ) ) {
 		push( @commands, $self->_route_command( 'withdraw', $item ) );
+	}
+	foreach my $item ( keys( %{ $self->{banned_cidr} } ) ) {
+		push( @commands, $self->_route_command_cidr( 'withdraw', $item ) );
 	}
 
 	if ( $self->{testing} ) {
@@ -640,6 +919,9 @@ sub flush {
 	foreach my $item ( keys( %{ $self->{banned} } ) ) {
 		push( @commands, $self->_route_command( 'withdraw', $item ) );
 	}
+	foreach my $item ( keys( %{ $self->{banned_cidr} } ) ) {
+		push( @commands, $self->_route_command_cidr( 'withdraw', $item ) );
+	}
 
 	if ( $self->{testing} ) {
 		$self->{frontend_obj}->{test_data} = \@commands;
@@ -655,7 +937,8 @@ sub flush {
 		}
 	} ## end else [ if ( $self->{testing} ) ]
 
-	$self->{banned} = {};
+	$self->{banned}      = {};
+	$self->{banned_cidr} = {};
 } ## end sub flush
 
 =head1 ERROR CODES / FLAGS
@@ -720,6 +1003,27 @@ The backend check raised an error.
 =head2 25, flushFailed
 
 Failed to flush the bans.
+
+=head2 26, banCidrFailed
+
+Failed to ban the CIDR range.
+
+=head2 27, unbanCidrFailed
+
+Failed to unban the CIDR range.
+
+=head2 28, cidrItemNotCidr
+
+The item to ban is not a CIDR range. Either wrong ref type or it is not an
+IPv4 or IPv6 address followed by a prefix length valid for its family.
+
+=head2 29, cidrNotSupported
+
+The backend does not support CIDR bans.
+
+=head2 30, listCidrFailed
+
+Failed to get a list of CIDR bans.
 
 =head1 AUTHOR
 

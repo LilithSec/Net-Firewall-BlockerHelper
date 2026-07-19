@@ -42,6 +42,17 @@ BEGIN {
 	is( $fw->{test_data}[0]{content},
 		'{"op":"delete","path":["firewall","group","address-group","kur_ssh","address","1.2.3.4"]}',
 		'unban records the delete op JSON with no key' );
+
+	ok( $fw->{backend_obj}{cidr_supported}, 'cidr is supported' );
+	$fw->ban_cidr( ban => '1.2.3.0/24' );
+	is( $fw->{test_data}[0]{content},
+		'{"op":"set","path":["firewall","group","address-group","kur_ssh","address","1.2.3.0/24"]}',
+		'ban_cidr records the set op JSON for the CIDR' );
+	my %listed = map { $_ => 1 } $fw->{backend_obj}->list_cidr;
+	ok( $listed{'1.2.3.0/24'}, 'list_cidr contains the banned CIDR' );
+	$fw->unban_cidr( ban => '1.2.3.0/24' );
+	%listed = map { $_ => 1 } $fw->{backend_obj}->list_cidr;
+	ok( !$listed{'1.2.3.0/24'}, 'list_cidr no longer contains the CIDR after unban_cidr' );
 }
 
 # custom group name

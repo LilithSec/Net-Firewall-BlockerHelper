@@ -133,4 +133,12 @@ is_deeply(
 	ok( $@, 'invalid chain errors' );
 }
 
+# --- CIDR bans are not supported ---------------------------------------------
+{
+	my $cidr_blocked = 0;
+	eval { $fw->ban_cidr( ban => '1.2.3.0/24' ); };
+	if ( $fw->{error} == 29 ) { $cidr_blocked = 1; }
+	ok( $cidr_blocked, 'ban_cidr sets error 29 cidrNotSupported' );
+}
+
 done_testing();

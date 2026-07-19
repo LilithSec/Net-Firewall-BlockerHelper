@@ -45,6 +45,24 @@ BEGIN {
 	is( $fw->{test_data}[0]{method}, 'PUT', 'unban PUTs the rendered membership' );
 	is( $fw->{test_data}[0]{content}, '{"addresses":[{"name":"5.6.7.8"}]}',
 		'unban content drops the unbanned IP' );
+
+	ok( $fw->{backend_obj}{cidr_supported}, 'the f5_bigip backend supports CIDR bans' );
+
+	$fw->ban_cidr( ban => '1.2.3.0/24' );
+	is( $fw->{test_data}[0]{method}, 'PUT', 'ban_cidr PUTs the rendered membership' );
+	is( $fw->{test_data}[0]{content},
+		'{"addresses":[{"name":"1.2.3.0/24"},{"name":"5.6.7.8"}]}',
+		'ban_cidr content lists the CIDR range as an address entry' );
+
+	my @cidrs = $fw->list_cidr;
+	is_deeply( [ sort @cidrs ], ['1.2.3.0/24'], 'list_cidr contains the banned CIDR range' );
+
+	$fw->unban_cidr( ban => '1.2.3.0/24' );
+	is( $fw->{test_data}[0]{content}, '{"addresses":[{"name":"5.6.7.8"}]}',
+		'unban_cidr content drops the unbanned CIDR range' );
+
+	@cidrs = $fw->list_cidr;
+	is_deeply( [ sort @cidrs ], [], 'list_cidr is empty after unban_cidr' );
 }
 
 # custom partition and name are honored

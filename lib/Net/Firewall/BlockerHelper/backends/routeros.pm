@@ -166,6 +166,11 @@ sub new {
 				24 => 'checkFailed',
 				25 => 'flushFailed',
 				30 => 'hostNotDefined',
+				31 => 'banCidrFailed',
+				32 => 'unbanCidrFailed',
+				33 => 'cidrItemNotCidr',
+				34 => 'cidrNotSupported',
+				35 => 'listCidrFailed',
 			},
 			fatal_flags      => {},
 			perror_not_fatal => 0,
@@ -179,8 +184,10 @@ sub new {
 		prefix       => 'kur',
 		name         => undef,
 		frontend_obj => undef,
-		inited       => 0,
-		banned       => {},
+		inited         => 0,
+		banned         => {},
+		banned_cidr    => {},
+		cidr_supported => 1,
 	};
 	bless $self;
 
@@ -484,6 +491,196 @@ sub unban {
 	delete( $self->{banned}{ $opts{ban} } );
 } ## end sub unban
 
+=head2 _valid_cidr
+
+Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
+IPv6 CIDR range, that is an address followed by C</> and a prefix length that
+is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
+IPv6). Returns false otherwise.
+
+=cut
+
+sub _valid_cidr {
+	my ( $self, $cidr ) = @_;
+
+	return 0 if ( !defined($cidr) || ref($cidr) ne '' );
+
+	if ( $cidr =~ m!\A(.+)/([0-9]{1,3})\z! ) {
+		my ( $addr, $prefix ) = ( $1, $2 );
+		return 1 if ( $addr =~ /\A$IPv4_re\z/ && $prefix <= 32 );
+		return 1 if ( $addr =~ /\A$IPv6_re\z/ && $prefix <= 128 );
+	}
+
+	return 0;
+} ## end sub _valid_cidr
+
+=head2 ban_cidr
+
+Bans a CIDR range by adding it to the relevant address-list. RouterOS
+address-lists accept a network prefix in the same manner as a single address.
+
+    $fw_helper->ban_cidr(ban => '1.2.3.0/24');
+
+=cut
+
+sub ban_cidr {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( !$self->{inited} ) {
+		$self->{error}       = 1;
+		$self->{errorString} = 'backend has not been inited';
+		$self->warn;
+		return;
+	}
+
+	if ( !defined( $opts{ban} ) ) {
+		$self->{error}       = 9;
+		$self->{errorString} = 'Nothing specified for the value ban';
+		$self->warn;
+		return;
+	} elsif ( ref( $opts{ban} ) ne '' ) {
+		$self->{error}       = 33;
+		$self->{errorString} = 'Bad ref type for ban... ref is "' . ref( $opts{ban} ) . '"';
+		$self->warn;
+		return;
+	} elsif ( !$self->_valid_cidr( $opts{ban} ) ) {
+		$self->{error}       = 33;
+		$self->{errorString} = 'ban item,"' . $opts{ban} . '", does not appear to be a IPv4 or IPv6 CIDR';
+		$self->warn;
+		return;
+	}
+
+	# lowercase so the same IPv6 CIDR in differing cases can't result in duplicate entries
+	$opts{ban} = lc( $opts{ban} );
+
+	if ( $self->{banned_cidr}{ $opts{ban} } ) {
+		if ( $self->{testing} ) {
+			$self->{frontend_obj}->{test_data} = 'already banned';
+		}
+		return;
+	}
+
+	my $command;
+	if ( $opts{ban} =~ m!\A$IPv4_re/! ) {
+		$command = $self->_remote(
+			'/ip firewall address-list add list=' . $self->{options}{list4} . ' address=' . $opts{ban} );
+	} else {
+		$command = $self->_remote(
+			'/ipv6 firewall address-list add list=' . $self->{options}{list6} . ' address=' . $opts{ban} );
+	}
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = $command;
+	} else {
+		my $output = `$command 2>&1`;
+		if ( $? != 0 ) {
+			$self->{error}       = 31;
+			$self->{errorString} = 'Ban failed... command "' . $command . '" resulted in... ' . $output;
+			$self->warn;
+		}
+	}
+
+	$self->{banned_cidr}{ $opts{ban} } = 1;
+} ## end sub ban_cidr
+
+=head2 unban_cidr
+
+Unbans a CIDR range by removing it from the relevant address-list.
+
+    $fw_helper->unban_cidr(ban => '1.2.3.0/24');
+
+=cut
+
+sub unban_cidr {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( !$self->{inited} ) {
+		$self->{error}       = 1;
+		$self->{errorString} = 'backend has not been inited';
+		$self->warn;
+		return;
+	}
+
+	if ( !defined( $opts{ban} ) ) {
+		$self->{error}       = 9;
+		$self->{errorString} = 'Nothing specified for the value ban';
+		$self->warn;
+		return;
+	} elsif ( ref( $opts{ban} ) ne '' ) {
+		$self->{error}       = 33;
+		$self->{errorString} = 'Bad ref type for ban... ref is "' . ref( $opts{ban} ) . '"';
+		$self->warn;
+		return;
+	} elsif ( !$self->_valid_cidr( $opts{ban} ) ) {
+		$self->{error}       = 33;
+		$self->{errorString} = 'ban item,"' . $opts{ban} . '", does not appear to be a IPv4 or IPv6 CIDR';
+		$self->warn;
+		return;
+	}
+
+	# lowercase so the same IPv6 CIDR in differing cases can't result in duplicate entries
+	$opts{ban} = lc( $opts{ban} );
+
+	if ( !$self->{banned_cidr}{ $opts{ban} } ) {
+		if ( $self->{testing} ) {
+			$self->{frontend_obj}->{test_data} = 'not banned';
+		}
+		return;
+	}
+
+	my $command;
+	if ( $opts{ban} =~ m!\A$IPv4_re/! ) {
+		$command = $self->_remote( '/ip firewall address-list remove [find where list='
+				. $self->{options}{list4}
+				. ' address='
+				. $opts{ban}
+				. ']' );
+	} else {
+		$command = $self->_remote( '/ipv6 firewall address-list remove [find where list='
+				. $self->{options}{list6}
+				. ' address='
+				. $opts{ban}
+				. ']' );
+	}
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = $command;
+	} else {
+		my $output = `$command 2>&1`;
+		if ( $? != 0 ) {
+			$self->{error}       = 32;
+			$self->{errorString} = 'Unban failed... command "' . $command . '" resulted in... ' . $output;
+			$self->warn;
+		}
+	}
+
+	delete( $self->{banned_cidr}{ $opts{ban} } );
+} ## end sub unban_cidr
+
+=head2 list_cidr
+
+List banned CIDR ranges.
+
+    my @banned_cidrs = $fw_helper->list_cidr;
+
+=cut
+
+sub list_cidr {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = 'list_cidr';
+	}
+
+	return keys( %{ $self->{banned_cidr} } );
+}
+
 =head2 list
 
 List banned IPs.
@@ -535,7 +732,8 @@ sub re_init {
 	}
 	$self->init;
 
-	my @to_re_ban = keys( %{ $self->{banned} } );
+	my @to_re_ban      = keys( %{ $self->{banned} } );
+	my @to_re_ban_cidr = keys( %{ $self->{banned_cidr} } );
 
 	my @re_init_test_data;
 	foreach my $item (@to_re_ban) {
@@ -559,6 +757,28 @@ sub re_init {
 			}
 		}
 	} ## end foreach my $item (@to_re_ban)
+
+	foreach my $item (@to_re_ban_cidr) {
+		my $command;
+		if ( $item =~ m!\A$IPv4_re/! ) {
+			$command = $self->_remote(
+				'/ip firewall address-list add list=' . $self->{options}{list4} . ' address=' . $item );
+		} else {
+			$command = $self->_remote(
+				'/ipv6 firewall address-list add list=' . $self->{options}{list6} . ' address=' . $item );
+		}
+
+		if ( $self->{testing} ) {
+			push( @re_init_test_data, $command );
+		} else {
+			my $output = `$command 2>&1`;
+			if ( $? != 0 ) {
+				$self->{error}       = 31;
+				$self->{errorString} = 'Ban failed... command "' . $command . '" resulted in... ' . $output;
+				$self->warn;
+			}
+		}
+	} ## end foreach my $item (@to_re_ban_cidr)
 
 	if ( $self->{testing} ) {
 		$self->{frontend_obj}->{test_data} = \@re_init_test_data;
@@ -696,7 +916,9 @@ sub flush {
 		}
 	} ## end else [ if ( $self->{testing} ) ]
 
-	$self->{banned} = {};
+	# the address-list removals above clear both single IP and CIDR entries at once
+	$self->{banned}      = {};
+	$self->{banned_cidr} = {};
 } ## end sub flush
 
 =head1 ERROR CODES / FLAGS
@@ -757,9 +979,31 @@ The backend check raised an error.
 
 Failed to flush the bans.
 
+=head2 31, banCidrFailed
+
+Failed to ban the CIDR range.
+
+=head2 32, unbanCidrFailed
+
+Failed to unban the CIDR range.
+
+=head2 33, cidrItemNotCidr
+
+The item to ban is not a CIDR range. Either wrong ref type or it is not an
+IPv4 or IPv6 address followed by a prefix length valid for its family.
+
+=head2 34, cidrNotSupported
+
+The backend does not support CIDR bans.
+
 =head2 30, hostNotDefined
 
 The host option is either undef or blank.
+
+=head2 35, listCidrFailed
+
+Failed to get a list of CIDR bans.
+
 
 =head1 AUTHOR
 

@@ -136,6 +136,11 @@ sub new {
 				23 => 'initFailed',
 				24 => 'checkFailed',
 				25 => 'flushFailed',
+				26 => 'banCidrFailed',
+				27 => 'unbanCidrFailed',
+				28 => 'cidrItemNotCidr',
+				29 => 'cidrNotSupported',
+				30 => 'listCidrFailed',
 			},
 			fatal_flags      => {},
 			perror_not_fatal => 0,
@@ -152,6 +157,8 @@ sub new {
 		frontend_obj => undef,
 		inited       => 0,
 		banned       => {},
+		banned_cidr    => {},
+		cidr_supported => 1,
 	};
 	bless $self;
 
@@ -612,6 +619,188 @@ sub unban {
 	delete( $self->{banned}{ $opts{ban} } );
 } ## end sub unban
 
+=head2 _valid_cidr
+
+Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
+IPv6 CIDR range, that is an address followed by C</> and a prefix length that
+is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
+IPv6). Returns false otherwise.
+
+=cut
+
+sub _valid_cidr {
+	my ( $self, $cidr ) = @_;
+
+	return 0 if ( !defined($cidr) || ref($cidr) ne '' );
+
+	if ( $cidr =~ m!\A(.+)/([0-9]{1,3})\z! ) {
+		my ( $addr, $prefix ) = ( $1, $2 );
+		return 1 if ( $addr =~ /\A$IPv4_re\z/ && $prefix <= 32 );
+		return 1 if ( $addr =~ /\A$IPv6_re\z/ && $prefix <= 128 );
+	}
+
+	return 0;
+} ## end sub _valid_cidr
+
+=head2 ban_cidr
+
+Bans a CIDR range by prepending one or more per-range rules, one per
+protocol, in the same manner as a single IP.
+
+    $backend->ban_cidr(ban => '1.2.3.0/24');
+
+=cut
+
+sub ban_cidr {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( !$self->{inited} ) {
+		$self->{error}       = 1;
+		$self->{errorString} = 'backend has not been inited';
+		$self->warn;
+		return;
+	}
+
+	if ( !defined( $opts{ban} ) ) {
+		$self->{error}       = 9;
+		$self->{errorString} = 'Nothing specified for the value ban';
+		$self->warn;
+		return;
+	} elsif ( ref( $opts{ban} ) ne '' ) {
+		$self->{error}       = 28;
+		$self->{errorString} = 'Bad ref type for ban... ref is "' . ref( $opts{ban} ) . '"';
+		$self->warn;
+		return;
+	} elsif ( !$self->_valid_cidr( $opts{ban} ) ) {
+		$self->{error}       = 28;
+		$self->{errorString} = 'ban item,"' . $opts{ban} . '", does not appear to be a IPv4 or IPv6 CIDR';
+		$self->warn;
+		return;
+	}
+
+	# lowercase so the same IPv6 CIDR in differing cases can't result in duplicate entries
+	$opts{ban} = lc( $opts{ban} );
+
+	if ( $self->{banned_cidr}{ $opts{ban} } ) {
+		if ( $self->{testing} ) {
+			$self->{frontend_obj}->{test_data} = 'already banned';
+		}
+		return;
+	}
+
+	my @commands;
+	foreach my $spec ( $self->_rule_specs( $opts{ban} ) ) {
+		push( @commands, 'ufw prepend ' . $self->{options}{type} . ' ' . $spec );
+	}
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = \@commands;
+	} else {
+		foreach my $item (@commands) {
+			my $output = `$item 2>&1`;
+			if ( $? != 0 ) {
+				$self->{error} = 26;
+				$self->{errorString}
+					= 'ban failed. non-zero exit code for the command... "' . $item . '"... output... ' . $output;
+				$self->warn;
+			}
+		}
+	} ## end else [ if ( $self->{testing} ) ]
+
+	$self->{banned_cidr}{ $opts{ban} } = 1;
+} ## end sub ban_cidr
+
+=head2 unban_cidr
+
+Unbans a CIDR range by deleting its per-range rules.
+
+    $backend->unban_cidr(ban => '1.2.3.0/24');
+
+=cut
+
+sub unban_cidr {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( !$self->{inited} ) {
+		$self->{error}       = 1;
+		$self->{errorString} = 'backend has not been inited';
+		$self->warn;
+		return;
+	}
+
+	if ( !defined( $opts{ban} ) ) {
+		$self->{error}       = 9;
+		$self->{errorString} = 'Nothing specified for the value ban';
+		$self->warn;
+		return;
+	} elsif ( ref( $opts{ban} ) ne '' ) {
+		$self->{error}       = 28;
+		$self->{errorString} = 'Bad ref type for ban... ref is "' . ref( $opts{ban} ) . '"';
+		$self->warn;
+		return;
+	} elsif ( !$self->_valid_cidr( $opts{ban} ) ) {
+		$self->{error}       = 28;
+		$self->{errorString} = 'ban item,"' . $opts{ban} . '", does not appear to be a IPv4 or IPv6 CIDR';
+		$self->warn;
+		return;
+	}
+
+	# lowercase so the same IPv6 CIDR in differing cases can't result in duplicate entries
+	$opts{ban} = lc( $opts{ban} );
+
+	if ( !$self->{banned_cidr}{ $opts{ban} } ) {
+		if ( $self->{testing} ) {
+			$self->{frontend_obj}->{test_data} = 'not banned';
+		}
+		return;
+	}
+
+	my @commands;
+	foreach my $spec ( $self->_rule_specs( $opts{ban} ) ) {
+		push( @commands, 'ufw delete ' . $self->{options}{type} . ' ' . $spec );
+	}
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = \@commands;
+	} else {
+		foreach my $item (@commands) {
+			my $output = `$item 2>&1`;
+			if ( $? != 0 ) {
+				$self->{error} = 27;
+				$self->{errorString}
+					= 'unban failed. non-zero exit code for the command... "' . $item . '"... output... ' . $output;
+				$self->warn;
+			}
+		}
+	} ## end else [ if ( $self->{testing} ) ]
+
+	delete( $self->{banned_cidr}{ $opts{ban} } );
+} ## end sub unban_cidr
+
+=head2 list_cidr
+
+List banned CIDR ranges.
+
+    my @banned_cidrs = $backend->list_cidr;
+
+=cut
+
+sub list_cidr {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = 'list_cidr';
+	}
+
+	return keys( %{ $self->{banned_cidr} } );
+}
+
 =head2 list
 
 List banned IPs.
@@ -663,7 +852,8 @@ sub re_init {
 	}
 	$self->init;
 
-	my @to_ban = keys( %{ $self->{banned} } );
+	# both single IPs and CIDR ranges are re-added the same way
+	my @to_ban = ( keys( %{ $self->{banned} } ), keys( %{ $self->{banned_cidr} } ) );
 
 	my @re_init_test_data;
 	foreach my $item (@to_ban) {
@@ -710,6 +900,11 @@ sub teardown {
 
 	my @commands;
 	foreach my $item ( keys( %{ $self->{banned} } ) ) {
+		foreach my $spec ( $self->_rule_specs($item) ) {
+			push( @commands, 'ufw delete ' . $self->{options}{type} . ' ' . $spec );
+		}
+	}
+	foreach my $item ( keys( %{ $self->{banned_cidr} } ) ) {
 		foreach my $spec ( $self->_rule_specs($item) ) {
 			push( @commands, 'ufw delete ' . $self->{options}{type} . ' ' . $spec );
 		}
@@ -805,6 +1000,11 @@ sub flush {
 			push( @commands, 'ufw delete ' . $self->{options}{type} . ' ' . $spec );
 		}
 	}
+	foreach my $item ( keys( %{ $self->{banned_cidr} } ) ) {
+		foreach my $spec ( $self->_rule_specs($item) ) {
+			push( @commands, 'ufw delete ' . $self->{options}{type} . ' ' . $spec );
+		}
+	}
 
 	if ( $self->{testing} ) {
 		$self->{frontend_obj}->{test_data} = \@commands;
@@ -820,7 +1020,8 @@ sub flush {
 		}
 	} ## end else [ if ( $self->{testing} ) ]
 
-	$self->{banned} = {};
+	$self->{banned}      = {};
+	$self->{banned_cidr} = {};
 } ## end sub flush
 
 =head1 ERROR CODES / FLAGS
@@ -850,6 +1051,11 @@ fatal.
     23 initFailed
     24 checkFailed
     25 flushFailed
+    26 banCidrFailed
+    27 unbanCidrFailed
+    28 cidrItemNotCidr
+    29 cidrNotSupported
+    30 listCidrFailed
 
 =head1 AUTHOR
 

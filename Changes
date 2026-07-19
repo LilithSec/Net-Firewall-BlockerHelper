@@ -1,6 +1,20 @@
 Revision history for Net-Firewall-BlockerHelper
 
 0.1.0   2026-07-13
+        - Add CIDR range ban/unban support via new methods ban_cidr, unban_cidr,
+          and list_cidr on the frontend and every backend. The frontend
+          validates the CIDR (IPv4 /0-32, IPv6 /0-128) and dispatches only to
+          backends that advertise cidr_supported; others raise the new
+          cidrNotSupported (29) error. New frontend error flags: banCidrFailed
+          (26), unbanCidrFailed (27), cidrItemNotCidr (28), cidrNotSupported
+          (29), listCidrFailed (30). Supported by the 27 backends whose
+          underlying firewall matches on a network prefix (pf, ipfw, npf, ufw,
+          route, bgp_rtbh, shorewall, routeros, routeros_api, vyos, pfsense,
+          opnsense, fortigate, panos, juniper_srx, cisco_fmc, checkpoint,
+          f5_bigip, cloudflare, aws_wafv2, azure, cloud_armor, fastly, akamai,
+          shell, file_reload, dummy). Not supported by iptables, firewalld,
+          nftables, dns_rpz, hosts_deny, netscaler, nsupdate, xdp, or abuseipdb,
+          which raise cidrNotSupported.
         - iptables: add tarpit and delude types alongside drop/reject, backed
           by the xtables-addons TARPIT/DELUDE targets. Both are TCP only, so
           they always emit '-p tcp' rules and skip non-tcp protocols/ports. A

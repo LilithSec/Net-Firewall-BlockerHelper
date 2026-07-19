@@ -32,6 +32,18 @@ BEGIN {
 
 	$fw->ban( ban => 'dead::1' );
 	like( $fw->{test_data}[1], qr/--name v6set --id ID6 --addresses dead::1\/128 /, 'IPv6 ban targets the v6 set' );
+
+	# CIDR support
+	ok( $fw->{backend_obj}{cidr_supported}, 'aws_wafv2 reports cidr_supported' );
+
+	$fw->ban_cidr( ban => '1.2.3.0/24' );
+	like( $fw->{test_data}[1], qr{--name v4set --id ID4 --addresses .*1\.2\.3\.0/24}, 'ban_cidr renders the CIDR as is into the v4 set' );
+	my %listed = map { $_ => 1 } $fw->list_cidr;
+	ok( $listed{'1.2.3.0/24'}, 'ban_cidr adds the CIDR to list_cidr' );
+
+	$fw->unban_cidr( ban => '1.2.3.0/24' );
+	%listed = map { $_ => 1 } $fw->list_cidr;
+	ok( !$listed{'1.2.3.0/24'}, 'unban_cidr removes the CIDR from list_cidr' );
 }
 
 # banning a family whose set is not configured is fatal

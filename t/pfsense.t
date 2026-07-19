@@ -45,6 +45,21 @@ BEGIN {
 		'{"address":["5.6.7.8"],"id":"kur_ssh","type":"host"}',
 		'unban drops the removed IP from the rendered body' );
 	is( $fw->{test_data}[1]{url}, 'https://h/api/v2/firewall/apply', 'unban also applies' );
+
+	# CIDR support
+	ok( $fw->{backend_obj}{cidr_supported}, 'cidr is supported' );
+	$fw->unban( ban => '5.6.7.8' );    # start from an empty alias so the CIDR body is predictable
+	$fw->ban_cidr( ban => '1.2.3.0/24' );
+	is( $fw->{test_data}[0]{method}, 'PATCH', 'ban_cidr PATCHes the alias' );
+	is( $fw->{test_data}[0]{content},
+		'{"address":["1.2.3.0/24"],"id":"kur_ssh","type":"host"}',
+		'ban_cidr renders the CIDR into the alias body' );
+	is( $fw->{test_data}[1]{url}, 'https://h/api/v2/firewall/apply', 'ban_cidr also applies' );
+	my %listed = map { $_ => 1 } $fw->{backend_obj}->list_cidr;
+	ok( $listed{'1.2.3.0/24'}, 'list_cidr contains the banned CIDR' );
+	$fw->unban_cidr( ban => '1.2.3.0/24' );
+	%listed = map { $_ => 1 } $fw->{backend_obj}->list_cidr;
+	ok( !$listed{'1.2.3.0/24'}, 'list_cidr no longer contains the CIDR after unban_cidr' );
 }
 
 # custom alias name

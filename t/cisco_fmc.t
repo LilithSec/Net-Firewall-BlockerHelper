@@ -37,6 +37,20 @@ BEGIN {
 
 	$fw->unban( ban => '1.2.3.4' );
 	unlike( $fw->{test_data}[0]{content}, qr/1\.2\.3\.4/, 'unban drops that literal' );
+
+	ok( $fw->{backend_obj}{cidr_supported}, 'cidr_supported is true' );
+
+	$fw->ban_cidr( ban => '1.2.3.0/24' );
+	is( $fw->{test_data}[0]{method}, 'PUT', 'ban_cidr PUTs the group' );
+	like( $fw->{test_data}[0]{content}, qr{"type":"Network","value":"1\.2\.3\.0/24"},
+		'ban_cidr renders the CIDR as a Network literal' );
+	my @cidrs = $fw->list_cidr;
+	is_deeply( [@cidrs], ['1.2.3.0/24'], 'list_cidr contains the banned CIDR' );
+
+	$fw->unban_cidr( ban => '1.2.3.0/24' );
+	unlike( $fw->{test_data}[0]{content}, qr{1\.2\.3\.0/24}, 'unban_cidr drops that literal' );
+	@cidrs = $fw->list_cidr;
+	is_deeply( [@cidrs], [], 'list_cidr empty after unban_cidr' );
 }
 
 # host/user/password/group_id are all required

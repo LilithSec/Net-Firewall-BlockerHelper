@@ -129,6 +129,11 @@ sub new {
 				27 => 'protocolsNotSupported',
 				30 => 'keyNotDefined',
 				31 => 'categoriesInvalid',
+				32 => 'banCidrFailed',
+				33 => 'unbanCidrFailed',
+				34 => 'cidrItemNotCidr',
+				35 => 'cidrNotSupported',
+				36 => 'listCidrFailed',
 			},
 			fatal_flags      => {},
 			perror_not_fatal => 0,
@@ -143,6 +148,7 @@ sub new {
 		frontend_obj => undef,
 		inited       => 0,
 		banned       => {},
+		cidr_supported => 0,
 		ua           => undef,
 	};
 	bless $self;
@@ -512,6 +518,65 @@ sub unban {
 	delete( $self->{banned}{ $opts{ban} } );
 } ## end sub unban
 
+=head2 ban_cidr
+
+CIDR bans are not supported by this backend; this always sets the
+cidrNotSupported error.
+
+    $backend->ban_cidr(ban => '1.2.3.0/24');
+
+=cut
+
+sub ban_cidr {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	$self->{error}       = 35;
+	$self->{errorString} = 'the ' . __PACKAGE__ . ' backend does not support CIDR bans';
+	$self->warn;
+
+	return;
+} ## end sub ban_cidr
+
+=head2 unban_cidr
+
+CIDR bans are not supported by this backend; this always sets the
+cidrNotSupported error.
+
+    $backend->unban_cidr(ban => '1.2.3.0/24');
+
+=cut
+
+sub unban_cidr {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	$self->{error}       = 35;
+	$self->{errorString} = 'the ' . __PACKAGE__ . ' backend does not support CIDR bans';
+	$self->warn;
+
+	return;
+} ## end sub unban_cidr
+
+=head2 list_cidr
+
+CIDR bans are not supported by this backend, so this always returns an empty
+list.
+
+    my @banned_cidrs = $backend->list_cidr;
+
+=cut
+
+sub list_cidr {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	return ();
+}
+
 =head2 list
 
 List banned IPs.
@@ -680,6 +745,28 @@ fatal.
     27 protocolsNotSupported
     30 keyNotDefined
     31 categoriesInvalid
+
+=head2 35, cidrNotSupported
+
+The backend does not support CIDR bans.
+
+=head2 32, banCidrFailed
+
+Failed to ban the CIDR range.
+
+=head2 33, unbanCidrFailed
+
+Failed to unban the CIDR range.
+
+=head2 34, cidrItemNotCidr
+
+The item to ban is not a CIDR range. Either wrong ref type or it is not an
+IPv4 or IPv6 address followed by a prefix length valid for its family.
+
+=head2 36, listCidrFailed
+
+Failed to get a list of CIDR bans.
+
 
 =head1 AUTHOR
 

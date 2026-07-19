@@ -37,6 +37,13 @@ is( $fw->{test_data},
 	"printf 'update delete 4.3.2.1.rbl.foo.bar TXT\\nsend\\n' | nsupdate -k '/etc/nsupdate.key'",
 	'unban deletes the TXT record' );
 
+my $cidr_blocked = 0;
+eval { $fw->ban_cidr( ban => '1.2.3.0/24' ); };
+if ( defined( $fw->{error} ) && $fw->{error} == 29 ) { $cidr_blocked = 1; }
+if ( !$cidr_blocked ) {
+	die( 'ban_cidr did not set frontend error 29 cidrNotSupported... got ' . ( defined( $fw->{error} ) ? $fw->{error} : 'undef' ) );
+}
+
 is( $fw->check, 1, 'check always reports healthy' );
 
 $fw->ban( ban => '5.6.7.8' );

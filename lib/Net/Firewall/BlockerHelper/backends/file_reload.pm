@@ -121,6 +121,11 @@ sub new {
 				25 => 'flushFailed',
 				30 => 'fileNotDefined',
 				31 => 'fileWriteFailed',
+				32 => 'banCidrFailed',
+				33 => 'unbanCidrFailed',
+				34 => 'cidrItemNotCidr',
+				35 => 'cidrNotSupported',
+				36 => 'listCidrFailed',
 			},
 			fatal_flags      => {},
 			perror_not_fatal => 0,
@@ -132,9 +137,11 @@ sub new {
 		test_data    => undef,
 		prefix       => 'kur',
 		name         => undef,
-		frontend_obj => undef,
-		inited       => 0,
-		banned       => {},
+		frontend_obj   => undef,
+		inited         => 0,
+		banned         => {},
+		banned_cidr    => {},
+		cidr_supported => 1,
 	};
 	bless $self;
 
@@ -188,7 +195,9 @@ sub _render {
 	my @lines;
 	push( @lines, $self->{options}{header} ) if ( $self->{options}{header} ne '' );
 
-	foreach my $ip ( sort( keys( %{ $self->{banned} } ) ) ) {
+	# single IPs and CIDR ranges are rendered into the same file the same way
+	my @to_render = ( keys( %{ $self->{banned} } ), keys( %{ $self->{banned_cidr} } ) );
+	foreach my $ip ( sort(@to_render) ) {
 		my $line = $self->{options}{format};
 		$line =~ s/\%\%\%BAN\%\%\%/$ip/g;
 		push( @lines, $line );
@@ -370,6 +379,151 @@ sub unban {
 	$self->_apply(14);
 } ## end sub unban
 
+=head2 _valid_cidr
+
+Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
+IPv6 CIDR range, that is an address followed by C</> and a prefix length that
+is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
+IPv6). Returns false otherwise.
+
+=cut
+
+sub _valid_cidr {
+	my ( $self, $cidr ) = @_;
+
+	return 0 if ( !defined($cidr) || ref($cidr) ne '' );
+
+	if ( $cidr =~ m!\A(.+)/([0-9]{1,3})\z! ) {
+		my ( $addr, $prefix ) = ( $1, $2 );
+		return 1 if ( $addr =~ /\A$IPv4_re\z/ && $prefix <= 32 );
+		return 1 if ( $addr =~ /\A$IPv6_re\z/ && $prefix <= 128 );
+	}
+
+	return 0;
+} ## end sub _valid_cidr
+
+=head2 ban_cidr
+
+Bans a CIDR range by rendering it into the file the same way a single IP is.
+
+    $fw_helper->ban_cidr(ban => '1.2.3.0/24');
+
+=cut
+
+sub ban_cidr {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( !$self->{inited} ) {
+		$self->{error}       = 1;
+		$self->{errorString} = 'backend has not been inited';
+		$self->warn;
+		return;
+	}
+
+	if ( !defined( $opts{ban} ) ) {
+		$self->{error}       = 9;
+		$self->{errorString} = 'Nothing specified for the value ban';
+		$self->warn;
+		return;
+	} elsif ( ref( $opts{ban} ) ne '' ) {
+		$self->{error}       = 34;
+		$self->{errorString} = 'Bad ref type for ban... ref is "' . ref( $opts{ban} ) . '"';
+		$self->warn;
+		return;
+	} elsif ( !$self->_valid_cidr( $opts{ban} ) ) {
+		$self->{error}       = 34;
+		$self->{errorString} = 'ban item,"' . $opts{ban} . '", does not appear to be a IPv4 or IPv6 CIDR';
+		$self->warn;
+		return;
+	}
+
+	# lowercase so the same IPv6 CIDR in differing cases can't result in duplicate entries
+	$opts{ban} = lc( $opts{ban} );
+
+	if ( $self->{banned_cidr}{ $opts{ban} } ) {
+		if ( $self->{testing} ) {
+			$self->{frontend_obj}->{test_data} = 'already banned';
+		}
+		return;
+	}
+
+	$self->{banned_cidr}{ $opts{ban} } = 1;
+	$self->_apply(26);
+} ## end sub ban_cidr
+
+=head2 unban_cidr
+
+Unbans a CIDR range by re-rendering the file without it.
+
+    $fw_helper->unban_cidr(ban => '1.2.3.0/24');
+
+=cut
+
+sub unban_cidr {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( !$self->{inited} ) {
+		$self->{error}       = 1;
+		$self->{errorString} = 'backend has not been inited';
+		$self->warn;
+		return;
+	}
+
+	if ( !defined( $opts{ban} ) ) {
+		$self->{error}       = 9;
+		$self->{errorString} = 'Nothing specified for the value ban';
+		$self->warn;
+		return;
+	} elsif ( ref( $opts{ban} ) ne '' ) {
+		$self->{error}       = 34;
+		$self->{errorString} = 'Bad ref type for ban... ref is "' . ref( $opts{ban} ) . '"';
+		$self->warn;
+		return;
+	} elsif ( !$self->_valid_cidr( $opts{ban} ) ) {
+		$self->{error}       = 34;
+		$self->{errorString} = 'ban item,"' . $opts{ban} . '", does not appear to be a IPv4 or IPv6 CIDR';
+		$self->warn;
+		return;
+	}
+
+	# lowercase so the same IPv6 CIDR in differing cases can't result in duplicate entries
+	$opts{ban} = lc( $opts{ban} );
+
+	if ( !$self->{banned_cidr}{ $opts{ban} } ) {
+		if ( $self->{testing} ) {
+			$self->{frontend_obj}->{test_data} = 'not banned';
+		}
+		return;
+	}
+
+	delete( $self->{banned_cidr}{ $opts{ban} } );
+	$self->_apply(27);
+} ## end sub unban_cidr
+
+=head2 list_cidr
+
+List banned CIDR ranges.
+
+    my @banned_cidrs = $fw_helper->list_cidr;
+
+=cut
+
+sub list_cidr {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = 'list_cidr';
+	}
+
+	return keys( %{ $self->{banned_cidr} } );
+}
+
 =head2 list
 
     my @banned = $fw_helper->list;
@@ -452,11 +606,15 @@ sub teardown {
 		return;
 	} ## end if ( $self->{options}{remove_on_teardown...})
 
-	# leave an empty (header/footer only) file behind
-	my %saved_banned = %{ $self->{banned} };
-	$self->{banned} = {};
+	# leave an empty (header/footer only) file behind; both the single IP and
+	# CIDR state are stashed so the empty render omits them but they survive
+	my %saved_banned      = %{ $self->{banned} };
+	my %saved_banned_cidr = %{ $self->{banned_cidr} };
+	$self->{banned}      = {};
+	$self->{banned_cidr} = {};
 	$self->_apply(17);
-	$self->{banned} = \%saved_banned;
+	$self->{banned}      = \%saved_banned;
+	$self->{banned_cidr} = \%saved_banned_cidr;
 } ## end sub teardown
 
 =head2 stop
@@ -520,7 +678,10 @@ sub flush {
 		return;
 	}
 
-	$self->{banned} = {};
+	# the file is re-rendered from full state, so clearing both hashes removes
+	# every single IP and CIDR ban at once
+	$self->{banned}      = {};
+	$self->{banned_cidr} = {};
 	$self->_apply(25);
 } ## end sub flush
 
@@ -585,6 +746,27 @@ options{file} was undef or blank.
 =head2 31, fileWriteFailed
 
 The rendered file could not be opened for writing.
+
+=head2 32, banCidrFailed
+
+Failed to ban the CIDR range.
+
+=head2 33, unbanCidrFailed
+
+Failed to unban the CIDR range.
+
+=head2 34, cidrItemNotCidr
+
+The item to ban is not a CIDR range. Either wrong ref type or it is not an
+IPv4 or IPv6 address followed by a prefix length valid for its family.
+
+=head2 35, cidrNotSupported
+
+The backend does not support CIDR bans.
+
+=head2 36, listCidrFailed
+
+Failed to get a list of CIDR bans.
 
 =head1 AUTHOR
 

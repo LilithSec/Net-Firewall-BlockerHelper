@@ -144,6 +144,26 @@ eval {
 		die('$banned[1] not undef');
 	}
 
+	if ( !$backend_obj->{cidr_supported} ) {
+		die('$backend_obj->{cidr_supported} is not true');
+	}
+
+	$fw_helper->ban_cidr( ban => '1.2.3.0/24' );
+	if ( !defined( $fw_helper->{test_data} ) ) {
+		die('Backend did not set $fw_helper->{test_data}');
+	} elsif ( $fw_helper->{test_data}[0] ne 'ipfw table derp_ssh add 1.2.3.0/24' ) {
+		die( '($fw_helper->{test_data}[0] ne "ipfw table derp_ssh add 1.2.3.0/24"... '
+				. Dumper( $fw_helper->{test_data} ) );
+	}
+
+	$fw_helper->unban_cidr( ban => '1.2.3.0/24' );
+	if ( !defined( $fw_helper->{test_data} ) ) {
+		die('Backend did not set $fw_helper->{test_data}');
+	} elsif ( $fw_helper->{test_data} ne 'ipfw table derp_ssh delete 1.2.3.0/24' ) {
+		die( '($fw_helper->{test_data} ne "ipfw table derp_ssh delete 1.2.3.0/24"... '
+				. Dumper( $fw_helper->{test_data} ) );
+	}
+
 	$fw_helper->re_init;
 	if ( !defined( $fw_helper->{test_data} ) ) {
 		die('Backend did not set $fw_helper->{test_data}');

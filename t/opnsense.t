@@ -29,6 +29,16 @@ BEGIN {
 
 	$fw->unban( ban => '1.2.3.4' );
 	like( $fw->{test_data}[0], qr{alias_util/delete/kur_bl}, 'unban posts to alias_util/delete' );
+
+	# CIDR support
+	ok( $fw->{backend_obj}{cidr_supported}, 'cidr is supported' );
+	$fw->ban_cidr( ban => '1.2.3.0/24' );
+	like( $fw->{test_data}[0], qr{alias_util/add/kur_bl}, 'ban_cidr posts to alias_util/add' );
+	my %listed = map { $_ => 1 } $fw->{backend_obj}->list_cidr;
+	ok( $listed{'1.2.3.0/24'}, 'list_cidr contains the banned CIDR' );
+	$fw->unban_cidr( ban => '1.2.3.0/24' );
+	%listed = map { $_ => 1 } $fw->{backend_obj}->list_cidr;
+	ok( !$listed{'1.2.3.0/24'}, 'list_cidr no longer contains the CIDR after unban_cidr' );
 }
 
 # host/key/secret are all required

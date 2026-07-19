@@ -30,6 +30,21 @@ BEGIN {
 	is( $fw->{test_data}, 'shorewall allow 1.2.3.4', 'unban uses shorewall allow' );
 
 	is_deeply( [ sort $fw->list ], ['dead::1'], 'list drops the unbanned ip' );
+
+	ok( $fw->{backend_obj}->{cidr_supported}, 'backend reports cidr_supported' );
+
+	$fw->ban_cidr( ban => '1.2.3.0/24' );
+	is( $fw->{test_data}, 'shorewall drop 1.2.3.0/24', 'IPv4 CIDR ban uses shorewall drop' );
+
+	$fw->ban_cidr( ban => 'dead::/64' );
+	is( $fw->{test_data}, 'shorewall6 drop dead::/64', 'IPv6 CIDR ban uses shorewall6 drop' );
+
+	is_deeply( [ sort $fw->list_cidr ], [ '1.2.3.0/24', 'dead::/64' ], 'list_cidr holds both CIDR bans' );
+
+	$fw->unban_cidr( ban => '1.2.3.0/24' );
+	is( $fw->{test_data}, 'shorewall allow 1.2.3.0/24', 'CIDR unban uses shorewall allow' );
+
+	is_deeply( [ sort $fw->list_cidr ], ['dead::/64'], 'list_cidr drops the unbanned CIDR' );
 }
 
 # type reject maps to the reject verb

@@ -38,6 +38,25 @@ BEGIN {
 		qr{delete security address-book global address kur_ssh_1-2-3-4},
 		'unban deletes the address object' );
 	like( $fw->{test_data}[1]{content}, qr{<commit-configuration/>}, 'then commits' );
+
+	ok( $fw->{backend_obj}{cidr_supported}, 'the juniper_srx backend supports CIDR bans' );
+
+	$fw->ban_cidr( ban => '1.2.3.0/24' );
+	is( scalar( @{ $fw->{test_data} } ), 2, 'ban_cidr is a load then a commit' );
+	like( $fw->{test_data}[0]{content},
+		qr{set security address-book global address kur_ssh_1-2-3-0/24 1\.2\.3\.0/24},
+		'load sets the CIDR address object with its own prefix' );
+	like( $fw->{test_data}[0]{content},
+		qr{set security address-book global address-set kur_ssh address kur_ssh_1-2-3-0/24},
+		'CIDR address is placed in the address-set' );
+	like( $fw->{test_data}[1]{content}, qr{<commit-configuration/>}, 'then commits' );
+	is_deeply( [ $fw->list_cidr ], ['1.2.3.0/24'], 'list_cidr shows the banned CIDR' );
+
+	$fw->unban_cidr( ban => '1.2.3.0/24' );
+	like( $fw->{test_data}[0]{content},
+		qr{delete security address-book global address kur_ssh_1-2-3-0/24},
+		'unban_cidr deletes the CIDR address object' );
+	is_deeply( [ $fw->list_cidr ], [], 'list_cidr is empty after unban_cidr' );
 }
 
 # host/user/password are all required

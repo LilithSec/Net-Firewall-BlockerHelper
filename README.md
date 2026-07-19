@@ -91,11 +91,19 @@ And the following example/testing backends are available.
     # unban a IP
     $fw_helper->unban(ban => '1.2.3.4');
 
+    # ban/unban a CIDR range (backends that support it; others raise
+    # the cidrNotSupported error)
+    $fw_helper->ban_cidr(ban => '1.2.3.0/24');
+    $fw_helper->unban_cidr(ban => '1.2.3.0/24');
+
     # get a list of banned IPs
     my @banned = $fw_helper->list;
     foreach my $ip (@banned) {
         print 'Banned IP: '.$ip."\n";
     }
+
+    # get a list of banned CIDR ranges
+    my @banned_cidrs = $fw_helper->list_cidr;
 
     # teardown the backend, re-init, and re-ban everything
     $fw_helper->re_init;

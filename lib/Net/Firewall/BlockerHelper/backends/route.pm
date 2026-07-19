@@ -111,6 +111,11 @@ sub new {
 				25 => 'flushFailed',
 				26 => 'portsNotSupported',
 				27 => 'protocolsNotSupported',
+				28 => 'banCidrFailed',
+				29 => 'unbanCidrFailed',
+				30 => 'cidrItemNotCidr',
+				31 => 'cidrNotSupported',
+				32 => 'listCidrFailed',
 			},
 			fatal_flags      => {},
 			perror_not_fatal => 0,
@@ -124,8 +129,10 @@ sub new {
 		test_data    => undef,
 		prefix       => 'kur',
 		frontend_obj => undef,
-		inited       => 0,
-		banned       => {},
+		inited         => 0,
+		banned         => {},
+		banned_cidr    => {},
+		cidr_supported => 1,
 	};
 	bless $self;
 
@@ -378,6 +385,185 @@ sub unban {
 	delete( $self->{banned}{ $opts{ban} } );
 } ## end sub unban
 
+=head2 _valid_cidr
+
+Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
+IPv6 CIDR range, that is an address followed by C</> and a prefix length that
+is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
+IPv6). Returns false otherwise.
+
+=cut
+
+sub _valid_cidr {
+	my ( $self, $cidr ) = @_;
+
+	return 0 if ( !defined($cidr) || ref($cidr) ne '' );
+
+	if ( $cidr =~ m!\A(.+)/([0-9]{1,3})\z! ) {
+		my ( $addr, $prefix ) = ( $1, $2 );
+		return 1 if ( $addr =~ /\A$IPv4_re\z/ && $prefix <= 32 );
+		return 1 if ( $addr =~ /\A$IPv6_re\z/ && $prefix <= 128 );
+	}
+
+	return 0;
+} ## end sub _valid_cidr
+
+=head2 ban_cidr
+
+Bans a CIDR range by adding a null route for it.
+
+    $backend->ban_cidr(ban => '1.2.3.0/24');
+
+=cut
+
+sub ban_cidr {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( !$self->{inited} ) {
+		$self->{error}       = 1;
+		$self->{errorString} = 'backend has not been inited';
+		$self->warn;
+		return;
+	}
+
+	if ( !defined( $opts{ban} ) ) {
+		$self->{error}       = 9;
+		$self->{errorString} = 'Nothing specified for the value ban';
+		$self->warn;
+		return;
+	} elsif ( ref( $opts{ban} ) ne '' ) {
+		$self->{error}       = 30;
+		$self->{errorString} = 'Bad ref type for ban... ref is "' . ref( $opts{ban} ) . '"';
+		$self->warn;
+		return;
+	} elsif ( !$self->_valid_cidr( $opts{ban} ) ) {
+		$self->{error}       = 30;
+		$self->{errorString} = 'ban item,"' . $opts{ban} . '", does not appear to be a IPv4 or IPv6 CIDR';
+		$self->warn;
+		return;
+	}
+
+	# lowercase so the same IPv6 CIDR in differing cases can't result in duplicate entries
+	$opts{ban} = lc( $opts{ban} );
+
+	if ( $self->{banned_cidr}{ $opts{ban} } ) {
+		if ( $self->{testing} ) {
+			$self->{frontend_obj}->{test_data} = 'already banned';
+		}
+		return;
+	}
+
+	# _route_command detects the family from the whole string, which a CIDR
+	# would break, so the family is taken from the address portion here
+	my ($addr) = ( $opts{ban} =~ m!\A(.+)/[0-9]+\z! );
+	my $family = ( $addr =~ /\A$IPv4_re\z/ ) ? '' : ' -6';
+	my $command = 'ip' . $family . ' route add ' . $self->{options}{blocktype} . ' ' . $opts{ban};
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = [$command];
+	} else {
+		my $output = `$command 2>&1`;
+		if ( $? != 0 ) {
+			$self->{error} = 28;
+			$self->{errorString}
+				= 'ban failed. non-zero exit code for the command... "' . $command . '"... output... ' . $output;
+			$self->warn;
+		}
+	}
+
+	$self->{banned_cidr}{ $opts{ban} } = 1;
+} ## end sub ban_cidr
+
+=head2 unban_cidr
+
+Unbans a CIDR range by deleting its null route.
+
+    $backend->unban_cidr(ban => '1.2.3.0/24');
+
+=cut
+
+sub unban_cidr {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( !$self->{inited} ) {
+		$self->{error}       = 1;
+		$self->{errorString} = 'backend has not been inited';
+		$self->warn;
+		return;
+	}
+
+	if ( !defined( $opts{ban} ) ) {
+		$self->{error}       = 9;
+		$self->{errorString} = 'Nothing specified for the value ban';
+		$self->warn;
+		return;
+	} elsif ( ref( $opts{ban} ) ne '' ) {
+		$self->{error}       = 30;
+		$self->{errorString} = 'Bad ref type for ban... ref is "' . ref( $opts{ban} ) . '"';
+		$self->warn;
+		return;
+	} elsif ( !$self->_valid_cidr( $opts{ban} ) ) {
+		$self->{error}       = 30;
+		$self->{errorString} = 'ban item,"' . $opts{ban} . '", does not appear to be a IPv4 or IPv6 CIDR';
+		$self->warn;
+		return;
+	}
+
+	# lowercase so the same IPv6 CIDR in differing cases can't result in duplicate entries
+	$opts{ban} = lc( $opts{ban} );
+
+	if ( !$self->{banned_cidr}{ $opts{ban} } ) {
+		if ( $self->{testing} ) {
+			$self->{frontend_obj}->{test_data} = 'not banned';
+		}
+		return;
+	}
+
+	# _route_command detects the family from the whole string, which a CIDR
+	# would break, so the family is taken from the address portion here
+	my ($addr) = ( $opts{ban} =~ m!\A(.+)/[0-9]+\z! );
+	my $family = ( $addr =~ /\A$IPv4_re\z/ ) ? '' : ' -6';
+	my $command = 'ip' . $family . ' route del ' . $self->{options}{blocktype} . ' ' . $opts{ban};
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = $command;
+	} else {
+		my $output = `$command 2>&1`;
+		if ( $? != 0 ) {
+			$self->{error} = 29;
+			$self->{errorString}
+				= 'unban failed. non-zero exit code for the command... "' . $command . '"... output... ' . $output;
+			$self->warn;
+		}
+	}
+
+	delete( $self->{banned_cidr}{ $opts{ban} } );
+} ## end sub unban_cidr
+
+=head2 list_cidr
+
+List banned CIDR ranges.
+
+    my @banned_cidrs = $backend->list_cidr;
+
+=cut
+
+sub list_cidr {
+	my ( $self, %opts ) = @_;
+
+	$self->errorblank;
+
+	if ( $self->{testing} ) {
+		$self->{frontend_obj}->{test_data} = 'list_cidr';
+	}
+
+	return keys( %{ $self->{banned_cidr} } );
+}
+
 =head2 list
 
 List banned IPs.
@@ -448,6 +634,26 @@ sub re_init {
 		}
 	} ## end foreach my $item (@to_ban)
 
+	# CIDR ranges are re-added the same way, but the family must be taken from
+	# the address portion as _route_command can not detect it from a CIDR
+	foreach my $item ( keys( %{ $self->{banned_cidr} } ) ) {
+		my ($addr) = ( $item =~ m!\A(.+)/[0-9]+\z! );
+		my $family = ( $addr =~ /\A$IPv4_re\z/ ) ? '' : ' -6';
+		my $command = 'ip' . $family . ' route add ' . $self->{options}{blocktype} . ' ' . $item;
+
+		if ( $self->{testing} ) {
+			push( @re_init_test_data, $command );
+		} else {
+			my $output = `$command 2>&1`;
+			if ( $? != 0 ) {
+				$self->{error} = 28;
+				$self->{errorString}
+					= 'ban failed. non-zero exit code for the command... "' . $command . '"... output... ' . $output;
+				$self->warn;
+			}
+		}
+	} ## end foreach my $item ( keys( %{ $self->{banned_cidr}...}))
+
 	if ( $self->{testing} ) {
 		$self->{frontend_obj}->{test_data} = \@re_init_test_data;
 	}
@@ -476,6 +682,14 @@ sub teardown {
 	my @commands;
 	foreach my $item ( keys( %{ $self->{banned} } ) ) {
 		push( @commands, $self->_route_command( 'del', $item ) );
+	}
+
+	# CIDR ranges are removed the same way, but the family must be taken from
+	# the address portion as _route_command can not detect it from a CIDR
+	foreach my $item ( keys( %{ $self->{banned_cidr} } ) ) {
+		my ($addr) = ( $item =~ m!\A(.+)/[0-9]+\z! );
+		my $family = ( $addr =~ /\A$IPv4_re\z/ ) ? '' : ' -6';
+		push( @commands, 'ip' . $family . ' route del ' . $self->{options}{blocktype} . ' ' . $item );
 	}
 
 	if ( $self->{testing} ) {
@@ -569,6 +783,14 @@ sub flush {
 		push( @commands, $self->_route_command( 'del', $item ) );
 	}
 
+	# CIDR ranges are removed the same way, but the family must be taken from
+	# the address portion as _route_command can not detect it from a CIDR
+	foreach my $item ( keys( %{ $self->{banned_cidr} } ) ) {
+		my ($addr) = ( $item =~ m!\A(.+)/[0-9]+\z! );
+		my $family = ( $addr =~ /\A$IPv4_re\z/ ) ? '' : ' -6';
+		push( @commands, 'ip' . $family . ' route del ' . $self->{options}{blocktype} . ' ' . $item );
+	}
+
 	if ( $self->{testing} ) {
 		$self->{frontend_obj}->{test_data} = \@commands;
 	} else {
@@ -583,7 +805,8 @@ sub flush {
 		}
 	} ## end else [ if ( $self->{testing} ) ]
 
-	$self->{banned} = {};
+	$self->{banned}      = {};
+	$self->{banned_cidr} = {};
 } ## end sub flush
 
 =head1 ERROR CODES / FLAGS
@@ -610,6 +833,11 @@ fatal.
     25 flushFailed
     26 portsNotSupported
     27 protocolsNotSupported
+    28 banCidrFailed
+    29 unbanCidrFailed
+    30 cidrItemNotCidr
+    31 cidrNotSupported
+    32 listCidrFailed
 
 =head1 AUTHOR
 

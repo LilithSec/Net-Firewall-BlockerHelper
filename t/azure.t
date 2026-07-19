@@ -32,6 +32,18 @@ BEGIN {
 
 	$fw->ban( ban => 'dead::1' );
 	like( $fw->{test_data}, qr{dead::1/128}, 'IPv6 rendered as a /128' );
+
+	# CIDR bans share the same rule and are rendered verbatim
+	ok( $fw->{backend_obj}{cidr_supported}, 'azure reports cidr_supported' );
+
+	$fw->ban_cidr( ban => '1.2.3.0/24' );
+	like( $fw->{test_data}, qr{ 1\.2\.3\.0/24}, 'ban_cidr renders the CIDR into the rule' );
+	my %listed = map { $_ => 1 } $fw->list_cidr;
+	ok( $listed{'1.2.3.0/24'}, 'ban_cidr adds the CIDR to list_cidr' );
+
+	$fw->unban_cidr( ban => '1.2.3.0/24' );
+	my %listed2 = map { $_ => 1 } $fw->list_cidr;
+	ok( !$listed2{'1.2.3.0/24'}, 'unban_cidr removes the CIDR from list_cidr' );
 }
 
 # custom subscription

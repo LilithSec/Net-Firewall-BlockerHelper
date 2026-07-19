@@ -36,6 +36,22 @@ my $status_cmd = 'ufw status | grep -qiE "^Status:[[:space:]]*active"';
 	is( $fw->check, 1, 'check reports healthy in testing mode' );
 	is_deeply( $fw->{test_data}, [$status_cmd], 'check verifies ufw is enabled' );
 
+	ok( $fw->{backend_obj}->{cidr_supported}, 'the ufw backend supports CIDR bans' );
+
+	$fw->ban_cidr( ban => '1.2.3.0/24' );
+	is_deeply(
+		$fw->{test_data},
+		['ufw prepend deny proto tcp from 1.2.3.0/24 to any port 22,143'],
+		'ban_cidr prepends a per-range rule with the ports'
+	);
+
+	$fw->unban_cidr( ban => '1.2.3.0/24' );
+	is_deeply(
+		$fw->{test_data},
+		['ufw delete deny proto tcp from 1.2.3.0/24 to any port 22,143'],
+		'unban_cidr deletes the per-range rule'
+	);
+
 	$fw->ban( ban => 'dead::1' );
 	$fw->re_init;
 	is_deeply(

@@ -147,4 +147,16 @@ sub fw {
 	ok( $@, 'invalid priority errors' );
 }
 
+# --- CIDR bans are not supported ---------------------------------------------
+{
+	my $fw = fw( ports => ['22'], protocols => ['tcp'] );
+	is( $fw->{backend_obj}->{cidr_supported}, 0, 'nftables does not support CIDR bans' );
+
+	my $cidr_blocked = 0;
+	eval { $fw->ban_cidr( ban => '1.2.3.0/24' ); };
+	if ( $fw->{error} == 29 ) { $cidr_blocked = 1; }
+	if ( !$cidr_blocked ) { die('ban_cidr did not set error 29 cidrNotSupported'); }
+	ok( $cidr_blocked, 'ban_cidr sets error 29 cidrNotSupported' );
+}
+
 done_testing();
