@@ -253,37 +253,22 @@ sub new {
 	return $self;
 } ## end sub new
 
-=head2 _api_base
-
-Internal helper. Returns the base URL of the AbuseIPDB v2 API.
-
-=cut
-
+# Internal helper. Returns the base URL of the AbuseIPDB v2 API.
 sub _api_base {
 	my ($self) = @_;
 
 	return 'https://api.abuseipdb.com/api/v2';
 }
 
-=head2 _check_url
-
-Internal helper. Returns the URL used by init and check to verify the API
-key and reachability, a minimal check call.
-
-=cut
-
+# Internal helper. Returns the URL used by init and check to verify the API
+# key and reachability, a minimal check call.
 sub _check_url {
 	my ($self) = @_;
 
 	return $self->_api_base . '/check?ipAddress=127.0.0.2&maxAgeInDays=1';
 }
 
-=head2 _uri_escape
-
-Internal helper. Minimal percent encoder so URI::Escape is not needed.
-
-=cut
-
+# Internal helper. Minimal percent encoder so URI::Escape is not needed.
 sub _uri_escape {
 	my ( $self, $string ) = @_;
 
@@ -292,14 +277,9 @@ sub _uri_escape {
 	return $string;
 }
 
-=head2 _report_body
-
-Internal helper. Returns the form encoded body for reporting the passed IP,
-with '%%%BAN%%%' in the comment replaced by the IP. A blank comment is left
-out entirely.
-
-=cut
-
+# Internal helper. Returns the form encoded body for reporting the passed IP,
+# with '%%%BAN%%%' in the comment replaced by the IP. A blank comment is left
+# out entirely.
 sub _report_body {
 	my ( $self, $ip ) = @_;
 
@@ -314,15 +294,10 @@ sub _report_body {
 	return $body;
 } ## end sub _report_body
 
-=head2 _request
-
-Internal helper. Performs a HTTP request via LWP::UserAgent with the API key
-header, dying with an explanation on any HTTP level failure. Status codes
-listed in the passed tolerate hash ref are returned as undef rather than
-died on. Never called in testing mode.
-
-=cut
-
+# Internal helper. Performs a HTTP request via LWP::UserAgent with the API key
+# header, dying with an explanation on any HTTP level failure. Status codes
+# listed in the passed tolerate hash ref are returned as undef rather than
+# died on. Never called in testing mode.
 sub _request {
 	my ( $self, $method, $url, $body, $tolerate ) = @_;
 
@@ -722,33 +697,90 @@ sub flush {
 
 =head1 ERROR CODES / FLAGS
 
-Error handling is provided by L<Error::Helper>. All errors are considered
-fatal.
+Error handling is provided by L<Error::Helper>. All
+errors are considered fatal.
 
-    1  notInited
-    6  invalidPrefixSpecified
-    7  invalidName
-    8  optionsNotHash
-    9  noBanItem
-    10 banItemNotIP
-    12 backendInitError
-    13 banFailed
-    14 unbanFailed
-    15 listFailed
-    16 reInitFailed
-    17 teardownFailed
-    18 alreadyInited
-    23 initFailed
-    24 checkFailed
-    25 flushFailed
-    26 portsNotSupported
-    27 protocolsNotSupported
-    30 keyNotDefined
-    31 categoriesInvalid
+=head2 1, notInited
 
-=head2 35, cidrNotSupported
+The backend has not been inited yet.
 
-The backend does not support CIDR bans.
+=head2 6, invalidPrefixSpecified
+
+The specified prefix did not match /^[a-zA-Z0-9]+$/.
+
+=head2 7, invalidName
+
+The name is either undef or does not match /^[a-zA-Z0-9\-]+$/.
+
+=head2 8, optionsNotHash
+
+The item passed to new for options is not a hash.
+
+=head2 9, noBanItem
+
+No IP specified to ban or unban.
+
+=head2 10, banItemNotIP
+
+The item to ban is not an IP. Either wrong ref type or regexp
+test using L<Regexp::IPv4> and L<Regexp::IPv6> failed.
+
+=head2 12, backendInitError
+
+Failed to init the backend.
+
+=head2 13, banFailed
+
+Failed to ban the item.
+
+=head2 14, unbanFailed
+
+Failed to unban the item.
+
+=head2 15, listFailed
+
+Failed to get a list of bans.
+
+=head2 16, reInitFailed
+
+Failed to re_init the backend.
+
+=head2 17, teardownFailed
+
+Failed to teardown the backend.
+
+=head2 18, alreadyInited
+
+init called, but the backend has already been inited.
+
+=head2 23, initFailed
+
+init failed. Probing the check endpoint failed.
+
+=head2 24, checkFailed
+
+The backend check raised an error.
+
+=head2 25, flushFailed
+
+Failed to flush the bans.
+
+=head2 26, portsNotSupported
+
+The abuseipdb backend reports whole IPs and does not support ports.
+
+=head2 27, protocolsNotSupported
+
+The abuseipdb backend reports whole IPs and does not support protocols.
+
+=head2 30, keyNotDefined
+
+The option key is undef or blank.
+
+=head2 31, categoriesInvalid
+
+The option categories is not an array ref of positive ints or a comma
+separated string of positive ints.
 
 =head2 32, banCidrFailed
 
@@ -763,10 +795,13 @@ Failed to unban the CIDR range.
 The item to ban is not a CIDR range. Either wrong ref type or it is not an
 IPv4 or IPv6 address followed by a prefix length valid for its family.
 
+=head2 35, cidrNotSupported
+
+The backend does not support CIDR bans.
+
 =head2 36, listCidrFailed
 
 Failed to get a list of CIDR bans.
-
 
 =head1 AUTHOR
 

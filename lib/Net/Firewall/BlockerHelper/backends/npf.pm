@@ -410,15 +410,10 @@ sub list {
 	return keys( %{ $self->{banned} } );
 }
 
-=head2 _valid_cidr
-
-Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
-IPv6 CIDR range, that is an address followed by C</> and a prefix length that
-is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
-IPv6). Returns false otherwise.
-
-=cut
-
+# Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
+# IPv6 CIDR range, that is an address followed by "/" and a prefix length that
+# is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
+# IPv6). Returns false otherwise.
 sub _valid_cidr {
 	my ( $self, $cidr ) = @_;
 
@@ -766,33 +761,108 @@ sub flush {
 
 =head1 ERROR CODES / FLAGS
 
-Error handling is provided by L<Error::Helper>. All errors are considered
-fatal.
+Error handling is provided by L<Error::Helper>. All
+errors are considered fatal.
 
-    1  notInited
-    6  invalidPrefixSpecified
-    7  invalidName
-    8  optionsNotHash
-    9  noBanItem
-    10 banItemNotIP
-    12 backendInitError
-    13 banFailed
-    14 unbanFailed
-    15 listFailed
-    16 reInitFailed
-    17 teardownFailed
-    18 alreadyInited
-    19 tableInvalid
-    23 initFailed
-    24 checkFailed
-    25 flushFailed
-    26 portsNotSupported
-    27 protocolsNotSupported
-    28 banCidrFailed
-    29 unbanCidrFailed
-    30 cidrItemNotCidr
-    31 cidrNotSupported
-    32 listCidrFailed
+=head2 1, notInited
+
+The backend has not been inited yet.
+
+=head2 6, invalidPrefixSpecified
+
+The specified prefix did not match /^[a-zA-Z0-9]+$/.
+
+=head2 7, invalidName
+
+The name is either undef or does not match /^[a-zA-Z0-9\-]+$/.
+
+=head2 8, optionsNotHash
+
+The item passed to new for options is not a hash.
+
+=head2 9, noBanItem
+
+No IP or CIDR range specified to ban or unban.
+
+=head2 10, banItemNotIP
+
+The item to ban is not an IP. Either wrong ref type or regexp
+test using L<Regexp::IPv4> and L<Regexp::IPv6> failed.
+
+=head2 12, backendInitError
+
+Failed to init the backend.
+
+=head2 13, banFailed
+
+Failed to ban the item.
+
+=head2 14, unbanFailed
+
+Failed to unban the item.
+
+=head2 15, listFailed
+
+Failed to get a list of bans.
+
+=head2 16, reInitFailed
+
+Failed to re_init the backend.
+
+=head2 17, teardownFailed
+
+Failed to teardown the backend.
+
+=head2 18, alreadyInited
+
+init called, but the backend has already been inited.
+
+=head2 19, tableInvalid
+
+The option table does not match /^[a-zA-Z0-9_\-]+$/.
+
+=head2 23, initFailed
+
+The table does not appear to be declared in npf.conf.
+
+=head2 24, checkFailed
+
+The backend check raised an error.
+
+=head2 25, flushFailed
+
+Failed to flush the bans.
+
+=head2 26, portsNotSupported
+
+The npf backend does not support ports. Ports belong to the rule referencing
+the table in npf.conf.
+
+=head2 27, protocolsNotSupported
+
+The npf backend does not support protocols. Protocols belong to the rule
+referencing the table in npf.conf.
+
+=head2 28, banCidrFailed
+
+Failed to ban the CIDR range.
+
+=head2 29, unbanCidrFailed
+
+Failed to unban the CIDR range.
+
+=head2 30, cidrItemNotCidr
+
+The item to ban is not a CIDR range. Either wrong ref type or it is not an
+IPv4 or IPv6 address followed by a prefix length valid for its family.
+
+=head2 31, cidrNotSupported
+
+The backend does not support CIDR bans.
+
+=head2 32, listCidrFailed
+
+Failed to get a list of CIDR bans.
 
 =head1 AUTHOR
 

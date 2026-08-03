@@ -198,7 +198,7 @@ sub new {
 			$self->warn;
 		} elsif ( $opts{options}{init} eq '' ) {
 			$self->{perror}      = 1;
-			$self->{error}       = 3;
+			$self->{error}       = 2;
 			$self->{errorString} = 'init is blank';
 			$self->warn;
 		} elsif ( !defined( $opts{options}{teardown} ) ) {
@@ -397,15 +397,10 @@ sub unban {
 	delete( $self->{banned}{ $opts{ban} } );
 } ## end sub unban
 
-=head2 _valid_cidr
-
-Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
-IPv6 CIDR range, that is an address followed by C</> and a prefix length that
-is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
-IPv6). Returns false otherwise.
-
-=cut
-
+# Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
+# IPv6 CIDR range, that is an address followed by "/" and a prefix length that
+# is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
+# IPv6). Returns false otherwise.
 sub _valid_cidr {
 	my ( $self, $cidr ) = @_;
 
@@ -754,29 +749,32 @@ sub flush {
 
 =head1 ERROR CODES / FLAGS
 
+Error handling is provided by L<Error::Helper>. All
+errors are considered fatal.
+
 =head2 1, notInited
 
-Backend has not been initted yet.
+The backend has not been inited yet.
 
 =head2 2, initInvalid
 
-'init' for options hash is invalid. Either undef or blank.
+The option init is undef or blank.
 
 =head2 3, optionsUndef
 
-Options is not a hash.
+The options hash passed to new is undef.
 
 =head2 4, teardownInvalid
 
-'teardown' for options hash is invalid. Either undef or blank.
+The option teardown is undef or blank.
 
 =head2 5, banInvalid
 
-'ban' for options hash is invalid. Either undef or blank.
+The option ban is undef or blank.
 
 =head2 6, unbanInvalid
 
-'unban' for options hash is invalid. Either undef or blank.
+The option unban is undef or blank.
 
 =head2 8, optionsNotHash
 
@@ -784,17 +782,12 @@ The item passed to new for options is not a hash.
 
 =head2 9, noBanItem
 
-No IP specified to ban.
+No IP or CIDR range specified to ban or unban.
 
 =head2 10, banItemNotIP
 
 The item to ban is not an IP. Either wrong ref type or regexp
 test using L<Regexp::IPv4> and L<Regexp::IPv6> failed.
-
-=head2 11, invalidBackend
-
-The specified backend failed to pass a basic sanity check of making sure it
-matches the regexp /^[a-zA-Z0-9\_]+$/.
 
 =head2 12, backendInitError
 
@@ -810,7 +803,7 @@ Failed to unban the item.
 
 =head2 15, listFailed
 
-Failed get a list of bans.
+Failed to get a list of bans.
 
 =head2 16, reInitFailed
 
@@ -822,7 +815,7 @@ Failed to teardown the backend.
 
 =head2 18, alreadyInited
 
-Backend has already been initiated.
+init called, but the backend has already been inited.
 
 =head2 24, checkFailed
 

@@ -241,26 +241,16 @@ sub new {
 	return $self;
 } ## end sub new
 
-=head2 _is_v4
-
-Internal helper. True if the IP is IPv4.
-
-=cut
-
+# Internal helper. True if the IP is IPv4.
 sub _is_v4 {
 	my ( $self, $ip ) = @_;
 
 	return ( $ip =~ /\A$IPv4_re\z/ ) ? 1 : 0;
 }
 
-=head2 _addr_name
-
-Internal helper. Returns the firewall address object name for the IP, a
-deterministic mangling of the prefix, name, and IP that avoids characters
-FortiOS disallows in object names.
-
-=cut
-
+# Internal helper. Returns the firewall address object name for the IP, a
+# deterministic mangling of the prefix, name, and IP that avoids characters
+# FortiOS disallows in object names.
 sub _addr_name {
 	my ( $self, $ip ) = @_;
 
@@ -271,25 +261,15 @@ sub _addr_name {
 	return $name;
 } ## end sub _addr_name
 
-=head2 _group_name
-
-Internal helper. Returns the address group name for the IP's family.
-
-=cut
-
+# Internal helper. Returns the address group name for the IP's family.
 sub _group_name {
 	my ( $self, $ip ) = @_;
 
 	return $self->_is_v4($ip) ? $self->{options}{group4} : $self->{options}{group6};
 }
 
-=head2 _cmdb_url
-
-Internal helper. Builds a cmdb REST URL for the passed path, appending the
-vdom query parameter when configured.
-
-=cut
-
+# Internal helper. Builds a cmdb REST URL for the passed path, appending the
+# vdom query parameter when configured.
 sub _cmdb_url {
 	my ( $self, $path ) = @_;
 
@@ -302,36 +282,21 @@ sub _cmdb_url {
 	return $url;
 } ## end sub _cmdb_url
 
-=head2 _address_path
-
-Internal helper. Returns the firewall address menu for the IP's family.
-
-=cut
-
+# Internal helper. Returns the firewall address menu for the IP's family.
 sub _address_path {
 	my ( $self, $ip ) = @_;
 
 	return $self->_is_v4($ip) ? 'firewall/address' : 'firewall/address6';
 }
 
-=head2 _addrgrp_path
-
-Internal helper. Returns the firewall address group menu for the IP's family.
-
-=cut
-
+# Internal helper. Returns the firewall address group menu for the IP's family.
 sub _addrgrp_path {
 	my ( $self, $ip ) = @_;
 
 	return $self->_is_v4($ip) ? 'firewall/addrgrp' : 'firewall/addrgrp6';
 }
 
-=head2 _uri_escape
-
-Internal helper. Minimal percent encoder so URI::Escape is not needed.
-
-=cut
-
+# Internal helper. Minimal percent encoder so URI::Escape is not needed.
 sub _uri_escape {
 	my ( $self, $string ) = @_;
 
@@ -340,12 +305,7 @@ sub _uri_escape {
 	return $string;
 }
 
-=head2 _json
-
-Internal helper. Returns a canonical JSON::PP encoder/decoder.
-
-=cut
-
+# Internal helper. Returns a canonical JSON::PP encoder/decoder.
 sub _json {
 	my ($self) = @_;
 
@@ -353,13 +313,8 @@ sub _json {
 	return JSON::PP->new->canonical->utf8;
 }
 
-=head2 _address_body
-
-Internal helper. Builds the JSON body creating the firewall address object
-for the IP, a single host in the family appropriate field.
-
-=cut
-
+# Internal helper. Builds the JSON body creating the firewall address object
+# for the IP, a single host in the family appropriate field.
 sub _address_body {
 	my ( $self, $ip ) = @_;
 
@@ -370,14 +325,9 @@ sub _address_body {
 	return $self->_json->encode( { name => $self->_addr_name($ip), ip6 => $ip . '/128' } );
 } ## end sub _address_body
 
-=head2 _request
-
-Internal helper. Performs a HTTP request via LWP::UserAgent using bearer token
-auth, returning the decoded JSON body (or undef for an empty body) and dying
-with an explanation on any HTTP level failure. Never called in testing mode.
-
-=cut
-
+# Internal helper. Performs a HTTP request via LWP::UserAgent using bearer token
+# auth, returning the decoded JSON body (or undef for an empty body) and dying
+# with an explanation on any HTTP level failure. Never called in testing mode.
 sub _request {
 	my ( $self, $method, $url, $body ) = @_;
 
@@ -423,13 +373,8 @@ sub _request {
 	return $decoded;
 } ## end sub _request
 
-=head2 _ban_requests
-
-Internal helper. Returns the two request descriptors used to ban an IP:
-create the address object, then add it to the group.
-
-=cut
-
+# Internal helper. Returns the two request descriptors used to ban an IP:
+# create the address object, then add it to the group.
 sub _ban_requests {
 	my ( $self, $ip ) = @_;
 
@@ -445,13 +390,8 @@ sub _ban_requests {
 	);
 } ## end sub _ban_requests
 
-=head2 _unban_requests
-
-Internal helper. Returns the two request descriptors used to unban an IP:
-remove it from the group, then delete the address object.
-
-=cut
-
+# Internal helper. Returns the two request descriptors used to unban an IP:
+# remove it from the group, then delete the address object.
 sub _unban_requests {
 	my ( $self, $ip ) = @_;
 
@@ -469,12 +409,7 @@ sub _unban_requests {
 	);
 } ## end sub _unban_requests
 
-=head2 _cidr_is_v4
-
-Internal helper. True if the CIDR's address part is IPv4.
-
-=cut
-
+# Internal helper. True if the CIDR's address part is IPv4.
 sub _cidr_is_v4 {
 	my ( $self, $cidr ) = @_;
 
@@ -484,50 +419,30 @@ sub _cidr_is_v4 {
 	return ( $addr =~ /\A$IPv4_re\z/ ) ? 1 : 0;
 } ## end sub _cidr_is_v4
 
-=head2 _cidr_group_name
-
-Internal helper. Returns the address group name for the CIDR's family.
-
-=cut
-
+# Internal helper. Returns the address group name for the CIDR's family.
 sub _cidr_group_name {
 	my ( $self, $cidr ) = @_;
 
 	return $self->_cidr_is_v4($cidr) ? $self->{options}{group4} : $self->{options}{group6};
 }
 
-=head2 _cidr_address_path
-
-Internal helper. Returns the firewall address menu for the CIDR's family.
-
-=cut
-
+# Internal helper. Returns the firewall address menu for the CIDR's family.
 sub _cidr_address_path {
 	my ( $self, $cidr ) = @_;
 
 	return $self->_cidr_is_v4($cidr) ? 'firewall/address' : 'firewall/address6';
 }
 
-=head2 _cidr_addrgrp_path
-
-Internal helper. Returns the firewall address group menu for the CIDR's family.
-
-=cut
-
+# Internal helper. Returns the firewall address group menu for the CIDR's family.
 sub _cidr_addrgrp_path {
 	my ( $self, $cidr ) = @_;
 
 	return $self->_cidr_is_v4($cidr) ? 'firewall/addrgrp' : 'firewall/addrgrp6';
 }
 
-=head2 _cidr_addr_name
-
-Internal helper. Returns the firewall address object name for the CIDR, a
-deterministic mangling of the prefix, name, and CIDR that avoids characters
-FortiOS disallows in object names.
-
-=cut
-
+# Internal helper. Returns the firewall address object name for the CIDR, a
+# deterministic mangling of the prefix, name, and CIDR that avoids characters
+# FortiOS disallows in object names.
 sub _cidr_addr_name {
 	my ( $self, $cidr ) = @_;
 
@@ -538,13 +453,8 @@ sub _cidr_addr_name {
 	return $name;
 } ## end sub _cidr_addr_name
 
-=head2 _cidr_address_body
-
-Internal helper. Builds the JSON body creating the firewall address object for
-the CIDR, a subnet in the family appropriate field.
-
-=cut
-
+# Internal helper. Builds the JSON body creating the firewall address object for
+# the CIDR, a subnet in the family appropriate field.
 sub _cidr_address_body {
 	my ( $self, $cidr ) = @_;
 
@@ -555,13 +465,8 @@ sub _cidr_address_body {
 	return $self->_json->encode( { name => $self->_cidr_addr_name($cidr), ip6 => $cidr } );
 } ## end sub _cidr_address_body
 
-=head2 _ban_cidr_requests
-
-Internal helper. Returns the two request descriptors used to ban a CIDR:
-create the address object, then add it to the group.
-
-=cut
-
+# Internal helper. Returns the two request descriptors used to ban a CIDR:
+# create the address object, then add it to the group.
 sub _ban_cidr_requests {
 	my ( $self, $cidr ) = @_;
 
@@ -583,13 +488,8 @@ sub _ban_cidr_requests {
 	);
 } ## end sub _ban_cidr_requests
 
-=head2 _unban_cidr_requests
-
-Internal helper. Returns the two request descriptors used to unban a CIDR:
-remove it from the group, then delete the address object.
-
-=cut
-
+# Internal helper. Returns the two request descriptors used to unban a CIDR:
+# remove it from the group, then delete the address object.
 sub _unban_cidr_requests {
 	my ( $self, $cidr ) = @_;
 
@@ -788,15 +688,10 @@ sub unban {
 	delete( $self->{banned}{ $opts{ban} } );
 } ## end sub unban
 
-=head2 _valid_cidr
-
-Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
-IPv6 CIDR range, that is an address followed by C</> and a prefix length that
-is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
-IPv6). Returns false otherwise.
-
-=cut
-
+# Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
+# IPv6 CIDR range, that is an address followed by "/" and a prefix length that
+# is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
+# IPv6). Returns false otherwise.
 sub _valid_cidr {
 	my ( $self, $cidr ) = @_;
 
@@ -1193,34 +1088,89 @@ sub flush {
 
 =head1 ERROR CODES / FLAGS
 
-Error handling is provided by L<Error::Helper>. All errors are considered
-fatal.
+Error handling is provided by L<Error::Helper>. All
+errors are considered fatal.
 
-    1  notInited
-    6  invalidPrefixSpecified
-    7  invalidName
-    8  optionsNotHash
-    9  noBanItem
-    10 banItemNotIP
-    12 backendInitError
-    13 banFailed
-    14 unbanFailed
-    15 listFailed
-    16 reInitFailed
-    17 teardownFailed
-    18 alreadyInited
-    23 initFailed
-    24 checkFailed
-    25 flushFailed
-    26 banCidrFailed
-    27 unbanCidrFailed
-    28 cidrItemNotCidr
-    29 cidrNotSupported
-    30 listCidrFailed
-    31 tokenNotDefined
-    40 portsNotSupported
-    41 protocolsNotSupported
-    42 hostNotDefined
+=head2 1, notInited
+
+The backend has not been inited yet.
+
+=head2 6, invalidPrefixSpecified
+
+The specified prefix did not match /^[a-zA-Z0-9]+$/.
+
+=head2 7, invalidName
+
+The name is either undef or does not match /^[a-zA-Z0-9\-]+$/.
+
+=head2 8, optionsNotHash
+
+The item passed to new for options is not a hash.
+
+=head2 9, noBanItem
+
+No IP or CIDR range specified to ban or unban.
+
+=head2 10, banItemNotIP
+
+The item to ban is not an IP. Either wrong ref type or regexp
+test using L<Regexp::IPv4> and L<Regexp::IPv6> failed.
+
+=head2 12, backendInitError
+
+Failed to init the backend.
+
+=head2 13, banFailed
+
+Failed to ban the item.
+
+=head2 14, unbanFailed
+
+Failed to unban the item.
+
+=head2 15, listFailed
+
+Failed to get a list of bans.
+
+=head2 16, reInitFailed
+
+Failed to re_init the backend.
+
+=head2 17, teardownFailed
+
+Failed to teardown the backend.
+
+=head2 18, alreadyInited
+
+init called, but the backend has already been inited.
+
+=head2 23, initFailed
+
+Init failed. Probing the address group failed.
+
+=head2 24, checkFailed
+
+The backend check raised an error.
+
+=head2 25, flushFailed
+
+Failed to flush the bans.
+
+=head2 26, portsNotSupported
+
+The fortigate backend blocks whole IPs and does not support ports.
+
+=head2 27, protocolsNotSupported
+
+The fortigate backend blocks whole IPs and does not support protocols.
+
+=head2 30, hostNotDefined
+
+The option host is undef or blank.
+
+=head2 31, tokenNotDefined
+
+The option token is undef or blank.
 
 =head2 32, banCidrFailed
 

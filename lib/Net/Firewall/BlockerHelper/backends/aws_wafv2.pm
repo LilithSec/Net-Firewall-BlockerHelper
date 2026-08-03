@@ -102,8 +102,8 @@ sub new {
 			all_errors_fatal => 1,
 			# all_fatal is what Error::Helper 2.1.0 actually checks; all_errors_fatal
 			# is kept for the name documented in its POD
-			all_fatal        => 1,
-			flags            => {
+			all_fatal => 1,
+			flags     => {
 				1  => 'notInited',
 				8  => 'optionsNotHash',
 				9  => 'noBanItem',
@@ -128,16 +128,16 @@ sub new {
 			fatal_flags      => {},
 			perror_not_fatal => 0,
 		},
-		options      => {},
-		ports        => [],
-		protocols    => [],
-		testing      => undef,
-		test_data    => undef,
-		prefix       => 'kur',
-		name         => undef,
-		frontend_obj => undef,
-		inited       => 0,
-		banned       => {},
+		options        => {},
+		ports          => [],
+		protocols      => [],
+		testing        => undef,
+		test_data      => undef,
+		prefix         => 'kur',
+		name           => undef,
+		frontend_obj   => undef,
+		inited         => 0,
+		banned         => {},
 		banned_cidr    => {},
 		cidr_supported => 1,
 	};
@@ -175,12 +175,7 @@ sub new {
 	return $self;
 } ## end sub new
 
-=head2 _region_suffix
-
-Internal helper. Returns the trailing --region argument when configured.
-
-=cut
-
+# Internal helper. Returns the trailing --region argument when configured.
 sub _region_suffix {
 	my ($self) = @_;
 
@@ -188,15 +183,11 @@ sub _region_suffix {
 		return ' --region ' . $self->{options}{region};
 	}
 	return '';
-} ## end sub _region_suffix
+}
 
-=head2 _conf_for_family
 
-Internal helper. Returns the (name, id) pair for family 4 or 6, either of
-which may be undef when not configured.
-
-=cut
-
+# Internal helper. Returns the (name, id) pair for family 4 or 6, either of
+# which may be undef when not configured.
 sub _conf_for_family {
 	my ( $self, $fam ) = @_;
 
@@ -204,27 +195,17 @@ sub _conf_for_family {
 		return ( $self->{options}{name4}, $self->{options}{id4} );
 	}
 	return ( $self->{options}{name6}, $self->{options}{id6} );
-} ## end sub _conf_for_family
+}
 
-=head2 _family_configured
-
-Internal helper. True if the given family (4 or 6) has both a name and id.
-
-=cut
-
+# Internal helper. True if the given family (4 or 6) has both a name and id.
 sub _family_configured {
 	my ( $self, $fam ) = @_;
 
 	my ( $name, $id ) = $self->_conf_for_family($fam);
 	return ( defined($name) && $name ne '' && defined($id) && $id ne '' ) ? 1 : 0;
-} ## end sub _family_configured
+}
 
-=head2 _configured_families
-
-Internal helper. Returns the list of configured families (4 and/or 6).
-
-=cut
-
+# Internal helper. Returns the list of configured families (4 and/or 6).
 sub _configured_families {
 	my ($self) = @_;
 
@@ -232,16 +213,11 @@ sub _configured_families {
 	push( @families, 4 ) if ( $self->_family_configured(4) );
 	push( @families, 6 ) if ( $self->_family_configured(6) );
 	return @families;
-} ## end sub _configured_families
+}
 
-=head2 _render_family
-
-Internal helper. Returns the banned IPs and CIDR ranges of the given family,
-sorted, each as a CIDR, space joined. Single IPs are rendered with an explicit
-/32 or /128; banned CIDR ranges are already CIDRs and are emitted as is.
-
-=cut
-
+# Internal helper. Returns the banned IPs and CIDR ranges of the given family,
+# sorted, each as a CIDR, space joined. Single IPs are rendered with an explicit
+# /32 or /128; banned CIDR ranges are already CIDRs and are emitted as is.
 sub _render_family {
 	my ( $self, $fam ) = @_;
 
@@ -257,7 +233,7 @@ sub _render_family {
 	# prefix determines the family and the CIDR is used as is
 	foreach my $cidr ( sort( keys( %{ $self->{banned_cidr} } ) ) ) {
 		my ($addr) = $cidr =~ m!\A(.+)/[0-9]{1,3}\z!;
-		my $is_v4 = ( defined($addr) && $addr =~ /\A$IPv4_re\z/ ) ? 1 : 0;
+		my $is_v4  = ( defined($addr) && $addr =~ /\A$IPv4_re\z/ ) ? 1 : 0;
 		next if ( $fam == 4 && !$is_v4 );
 		next if ( $fam == 6 && $is_v4 );
 		push( @addresses, $cidr );
@@ -266,38 +242,24 @@ sub _render_family {
 	return join( ' ', @addresses );
 } ## end sub _render_family
 
-=head2 _set_suffix
 
-Internal helper. Returns the shared --scope/--name/--id (and --region)
-arguments identifying an IP set.
-
-=cut
-
+# Internal helper. Returns the shared --scope/--name/--id (and --region)
+# arguments identifying an IP set.
 sub _set_suffix {
 	my ( $self, $name, $id ) = @_;
 
 	return ' --scope ' . $self->{options}{scope} . ' --name ' . $name . ' --id ' . $id . $self->_region_suffix;
 }
 
-=head2 _get_command
-
-Internal helper. Returns the get-ip-set command for an IP set.
-
-=cut
-
+# Internal helper. Returns the get-ip-set command for an IP set.
 sub _get_command {
 	my ( $self, $name, $id ) = @_;
 
 	return $self->{options}{aws_cmd} . ' wafv2 get-ip-set' . $self->_set_suffix( $name, $id );
 }
 
-=head2 _update_command
-
-Internal helper. Returns the update-ip-set command for an IP set with the
-given rendered addresses and lock token.
-
-=cut
-
+# Internal helper. Returns the update-ip-set command for an IP set with the
+# given rendered addresses and lock token.
 sub _update_command {
 	my ( $self, $name, $id, $addresses, $token ) = @_;
 
@@ -311,16 +273,11 @@ sub _update_command {
 		. $token;
 } ## end sub _update_command
 
-=head2 _apply_family
-
-Internal helper. Applies the current banned state for one family by running a
-get-ip-set then an update-ip-set. In testing it appends the two commands (with
-a <lock-token> placeholder) to the passed accumulator; in real mode it runs the
-get, extracts the LockToken, and runs the update, raising the error flag on
-failure.
-
-=cut
-
+# Internal helper. Applies the current banned state for one family by running a
+# get-ip-set then an update-ip-set. In testing it appends the two commands (with
+# a <lock-token> placeholder) to the passed accumulator; in real mode it runs the
+# get, extracts the LockToken, and runs the update, raising the error flag on
+# failure.
 sub _apply_family {
 	my ( $self, $fam, $error_flag, $acc ) = @_;
 
@@ -396,6 +353,8 @@ sub init {
 
 =head2 ban
 
+Bans an IP.
+
     $fw_helper->ban( ban => $ip );
 
 =cut
@@ -460,6 +419,8 @@ sub ban {
 
 =head2 unban
 
+Unbans an IP.
+
     $fw_helper->unban( ban => $ip );
 
 =cut
@@ -515,15 +476,10 @@ sub unban {
 	}
 } ## end sub unban
 
-=head2 _valid_cidr
-
-Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
-IPv6 CIDR range, that is an address followed by C</> and a prefix length that
-is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
-IPv6). Returns false otherwise.
-
-=cut
-
+# Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
+# IPv6 CIDR range, that is an address followed by "/" and a prefix length that
+# is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
+# IPv6). Returns false otherwise.
 sub _valid_cidr {
 	my ( $self, $cidr ) = @_;
 
@@ -598,7 +554,7 @@ sub ban_cidr {
 	$self->{banned_cidr}{ $opts{ban} } = 1;
 
 	my @commands;
-	$self->_apply_family( $fam, 26, \@commands );
+	$self->_apply_family( $fam, 31, \@commands );
 	if ( $self->{testing} ) {
 		$self->{frontend_obj}->{test_data} = \@commands;
 	}
@@ -656,7 +612,7 @@ sub unban_cidr {
 	delete( $self->{banned_cidr}{ $opts{ban} } );
 
 	my @commands;
-	$self->_apply_family( $fam, 27, \@commands );
+	$self->_apply_family( $fam, 32, \@commands );
 	if ( $self->{testing} ) {
 		$self->{frontend_obj}->{test_data} = \@commands;
 	}
@@ -680,7 +636,7 @@ sub list_cidr {
 	}
 
 	return keys( %{ $self->{banned_cidr} } );
-}
+} ## end sub list_cidr
 
 =head2 list
 
@@ -698,11 +654,13 @@ sub list {
 	}
 
 	return keys( %{ $self->{banned} } );
-}
+} ## end sub list
 
 =head2 re_init
 
 Re-applies the full banned set to each configured IP set.
+
+    $fw_helper->re_init;
 
 =cut
 
@@ -740,6 +698,8 @@ sub re_init {
 Empties each configured IP set. The internal ban list is kept so a following
 re_init restores it.
 
+    $fw_helper->teardown;
+
 =cut
 
 sub teardown {
@@ -773,6 +733,8 @@ sub teardown {
 
 Alias for L</teardown>.
 
+    $fw_helper->stop;
+
 =cut
 
 sub stop {
@@ -783,8 +745,10 @@ sub stop {
 
 =head2 check
 
-Verifies each configured IP set still exists via a get-ip-set. Zero exit is
+Verifies each configured IP set still exists via a get-ip-set. Zero return is
 healthy.
+
+    $result=$fw_helper->check;
 
 =cut
 
@@ -816,6 +780,8 @@ sub check {
 
 Empties each configured IP set and clears the ban list.
 
+    $fw_helper->flush;
+
 =cut
 
 sub flush {
@@ -845,38 +811,90 @@ sub flush {
 
 =head1 ERROR CODES / FLAGS
 
-    1  notInited
-    8  optionsNotHash
-    9  noBanItem
-    10 banItemNotIP
-    12 backendInitError
-    13 banFailed
-    14 unbanFailed
-    15 listFailed
-    16 reInitFailed
-    17 teardownFailed
-    18 alreadyInited
-    20 scopeInvalid
-    24 checkFailed
-    25 flushFailed
-    26 banCidrFailed
-    27 unbanCidrFailed
-    28 cidrItemNotCidr
-    29 cidrNotSupported
-    30 ipsetNotConfigured
-    33 listCidrFailed
+Error handling is provided by L<Error::Helper>. All
+errors are considered fatal.
 
-26, banCidrFailed - Failed to ban the CIDR range.
+=head2 1, notInited
 
-27, unbanCidrFailed - Failed to unban the CIDR range.
+The backend has not been inited yet.
 
-28, cidrItemNotCidr - The item to ban is not a CIDR range. Either wrong ref
-type or it is not an IPv4 or IPv6 address followed by a prefix length valid
-for its family.
+=head2 8, optionsNotHash
 
-29, cidrNotSupported - The backend does not support CIDR bans.
+The item passed to new for options is not a hash.
 
-33, listCidrFailed - Failed to get a list of CIDR bans.
+=head2 9, noBanItem
+
+No IP or CIDR range specified to ban or unban.
+
+=head2 10, banItemNotIP
+
+The item to ban is not an IP. Either wrong ref type or regexp
+test using L<Regexp::IPv4> and L<Regexp::IPv6> failed.
+
+=head2 12, backendInitError
+
+Failed to init the backend. A get-ip-set for a configured IP set failed.
+
+=head2 13, banFailed
+
+Failed to ban the item.
+
+=head2 14, unbanFailed
+
+Failed to unban the item.
+
+=head2 15, listFailed
+
+Failed to get a list of bans.
+
+=head2 16, reInitFailed
+
+Failed to re_init the backend.
+
+=head2 17, teardownFailed
+
+Failed to teardown the backend.
+
+=head2 18, alreadyInited
+
+init called, but the backend has already been inited.
+
+=head2 20, scopeInvalid
+
+The scope option is not either "REGIONAL" or "CLOUDFRONT".
+
+=head2 24, checkFailed
+
+The backend check raised an error.
+
+=head2 25, flushFailed
+
+Failed to flush the bans.
+
+=head2 30, ipsetNotConfigured
+
+No IP set is configured for the family, IPv4 or IPv6, of the item.
+
+=head2 31, banCidrFailed
+
+Failed to ban the CIDR range.
+
+=head2 32, unbanCidrFailed
+
+Failed to unban the CIDR range.
+
+=head2 33, cidrItemNotCidr
+
+The item to ban is not a CIDR range. Either wrong ref type or it is not an
+IPv4 or IPv6 address followed by a prefix length valid for its family.
+
+=head2 34, cidrNotSupported
+
+The backend does not support CIDR bans.
+
+=head2 35, listCidrFailed
+
+Failed to get a list of CIDR bans.
 
 =head1 AUTHOR
 
@@ -884,7 +902,7 @@ Zane C. Bowers-Hadley, C<< <vvelox at vvelox.ent> >>
 
 =head1 LICENSE AND COPYRIGHT
 
-This software is Copyright (c) 2023 by Zane C. Bowers-Hadley.
+This software is Copyright (c) 2026 by Zane C. Bowers-Hadley.
 
 This is free software, licensed under:
 

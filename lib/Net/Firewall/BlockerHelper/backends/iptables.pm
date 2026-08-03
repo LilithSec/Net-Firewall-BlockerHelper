@@ -393,13 +393,8 @@ sub new {
 	return $self;
 } ## end sub new
 
-=head2 _set_names
-
-Internal helper. Returns the IPv4 ipset name, IPv6 ipset name, and chain
-name for this instance.
-
-=cut
-
+# Internal helper. Returns the IPv4 ipset name, IPv6 ipset name, and chain
+# name for this instance.
 sub _set_names {
 	my ($self) = @_;
 
@@ -407,14 +402,9 @@ sub _set_names {
 	return ( $chain . '_4', $chain . '_6', $chain );
 }
 
-=head2 _needs_notrack
-
-Internal helper. True when the configured type is one of the xtables-addons
-TCP targets (tarpit/delude) that require the matching traffic to be exempted
-from connection tracking. See L</_notrack_commands>.
-
-=cut
-
+# Internal helper. True when the configured type is one of the xtables-addons
+# TCP targets (tarpit/delude) that require the matching traffic to be exempted
+# from connection tracking. See _notrack_commands.
 sub _needs_notrack {
 	my ($self) = @_;
 
@@ -422,19 +412,14 @@ sub _needs_notrack {
 	return ( $type eq 'tarpit' || $type eq 'delude' ) ? 1 : 0;
 }
 
-=head2 _rule_specs
-
-Internal helper. Returns the list of per-rule specs the block rules are built
-from, as hashrefs of C<< { fam => \%family, match => $match } >> where
-C<match> is the portion of the rule between C<src> and C<-j> (eg
-C<< ' -p tcp -m multiport --dports 22' >>, or C<''> for match-everything).
-
-Both L</_rule_commands> (the filter table block rules) and
-L</_notrack_commands> (the raw table conntrack exemptions) are generated from
-these specs so the two always match exactly the same traffic.
-
-=cut
-
+# Internal helper. Returns the list of per-rule specs the block rules are built
+# from, as hashrefs of { fam => \%family, match => $match } where
+# match is the portion of the rule between src and -j (eg
+# ' -p tcp -m multiport --dports 22', or '' for match-everything).
+#
+# Both _rule_commands (the filter table block rules) and
+# _notrack_commands (the raw table conntrack exemptions) are generated from
+# these specs so the two always match exactly the same traffic.
 sub _rule_specs {
 	my ($self) = @_;
 
@@ -520,13 +505,8 @@ sub _rule_specs {
 	return @specs;
 } ## end sub _rule_specs
 
-=head2 _rule_commands
-
-Internal helper. Returns the list of commands that populate the filter chain
-with the block rules, based on the configured protocols and ports.
-
-=cut
-
+# Internal helper. Returns the list of commands that populate the filter chain
+# with the block rules, based on the configured protocols and ports.
 sub _rule_commands {
 	my ($self) = @_;
 
@@ -548,23 +528,18 @@ sub _rule_commands {
 	return @commands;
 } ## end sub _rule_commands
 
-=head2 _notrack_commands
-
-Internal helper. Returns the raw table rules that exempt the tarpitted or
-deluded traffic from connection tracking, or an empty list for the plain
-drop/reject types that do not need it.
-
-TARPIT and DELUDE craft their own TCP replies (a zero-window ACK stream and a
-SYN/ACK-then-RST respectively) with no local socket. If conntrack tracks that
-traffic the kernel's own stack also processes it, which both undoes the trick
-and pins an INVALID conntrack entry per attacker packet. Adding a
-C<< -j CT --notrack >> rule in raw/PREROUTING that matches exactly the same
-source set, protocol, and ports as the block rule keeps conntrack out of the
-way. These populate a same-named chain in the C<raw> table (chain names are
-per-table, so it does not collide with the filter chain).
-
-=cut
-
+# Internal helper. Returns the raw table rules that exempt the tarpitted or
+# deluded traffic from connection tracking, or an empty list for the plain
+# drop/reject types that do not need it.
+#
+# TARPIT and DELUDE craft their own TCP replies (a zero-window ACK stream and a
+# SYN/ACK-then-RST respectively) with no local socket. If conntrack tracks that
+# traffic the kernel's own stack also processes it, which both undoes the trick
+# and pins an INVALID conntrack entry per attacker packet. Adding a
+# -j CT --notrack rule in raw/PREROUTING that matches exactly the same
+# source set, protocol, and ports as the block rule keeps conntrack out of the
+# way. These populate a same-named chain in the raw table (chain names are
+# per-table, so it does not collide with the filter chain).
 sub _notrack_commands {
 	my ($self) = @_;
 
@@ -588,14 +563,9 @@ sub _notrack_commands {
 	return @commands;
 } ## end sub _notrack_commands
 
-=head2 _raw_setup_commands
-
-Internal helper. Returns the commands that create the raw table chain, fill
-it with the L</_notrack_commands>, and jump to it from raw/PREROUTING. Empty
-unless the type needs notrack.
-
-=cut
-
+# Internal helper. Returns the commands that create the raw table chain, fill
+# it with the _notrack_commands, and jump to it from raw/PREROUTING. Empty
+# unless the type needs notrack.
 sub _raw_setup_commands {
 	my ($self) = @_;
 
@@ -612,13 +582,8 @@ sub _raw_setup_commands {
 	);
 } ## end sub _raw_setup_commands
 
-=head2 _raw_teardown_commands
-
-Internal helper. Returns the commands that remove the raw table chain and its
-jump from raw/PREROUTING. Empty unless the type needs notrack.
-
-=cut
-
+# Internal helper. Returns the commands that remove the raw table chain and its
+# jump from raw/PREROUTING. Empty unless the type needs notrack.
 sub _raw_teardown_commands {
 	my ($self) = @_;
 
@@ -636,15 +601,10 @@ sub _raw_teardown_commands {
 	);
 } ## end sub _raw_teardown_commands
 
-=head2 _kill_commands
-
-Internal helper. Returns the conntrack commands used to drop existing
-connection tracking entries for the passed IP. When protocols are
-configured, the kill is scoped to them via -p so protocols that are not
-being blocked are left alone; otherwise every entry for the IP is dropped.
-
-=cut
-
+# Internal helper. Returns the conntrack commands used to drop existing
+# connection tracking entries for the passed IP. When protocols are
+# configured, the kill is scoped to them via -p so protocols that are not
+# being blocked are left alone; otherwise every entry for the IP is dropped.
 sub _kill_commands {
 	my ( $self, $ip ) = @_;
 
@@ -1178,15 +1138,10 @@ sub flush {
 	$self->{banned} = {};
 } ## end sub flush
 
-=head2 _valid_cidr
-
-Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
-IPv6 CIDR range, that is an address followed by C</> and a prefix length that
-is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
-IPv6). Returns false otherwise.
-
-=cut
-
+# Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
+# IPv6 CIDR range, that is an address followed by "/" and a prefix length that
+# is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
+# IPv6). Returns false otherwise.
 sub _valid_cidr {
 	my ( $self, $cidr ) = @_;
 
@@ -1267,7 +1222,7 @@ errors are considered fatal.
 
 =head2 1, notInited
 
-Backend has not been initted yet.
+The backend has not been inited yet.
 
 =head2 2, invalidPortSpecified
 
@@ -1299,7 +1254,7 @@ The item passed to new for options is not a hash.
 
 =head2 9, noBanItem
 
-No IP specified to ban.
+No IP specified to ban or unban.
 
 =head2 10, banItemNotIP
 
@@ -1325,7 +1280,7 @@ Failed to unban the item.
 
 =head2 15, listFailed
 
-Failed get a list of bans.
+Failed to get a list of bans.
 
 =head2 16, reInitFailed
 
@@ -1337,13 +1292,17 @@ Failed to teardown the backend.
 
 =head2 18, alreadyInited
 
-Backend has already been initiated.
+init called, but the backend has already been inited.
 
 =head2 20, typeInvalid
 
-The value for type is not valid. Should be 'drop', 'reject', 'tarpit', or
-'delude'. Also raised when tarpit_mode is set to something other than 'tarpit',
-'honeypot', or 'reset'.
+The option type is not one of "drop", "reject", "tarpit", or "delude", or the
+option tarpit_mode is not one of "tarpit", "honeypot", or "reset".
+
+=head2 21, nameTooLong
+
+The combined prefix and name is longer than 28 characters, the max iptables
+chain name length.
 
 =head2 23, initFailed
 
@@ -1355,12 +1314,7 @@ The backend check raised an error.
 
 =head2 25, flushFailed
 
-One of the required commands for flush failed.
-
-=head2 21, nameTooLong
-
-The combined prefix and name is longer than the firewall allows for its
-object names.
+Failed to flush the bans.
 
 =head2 26, banCidrFailed
 

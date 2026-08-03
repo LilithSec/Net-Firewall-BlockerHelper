@@ -238,24 +238,14 @@ sub new {
 	return $self;
 } ## end sub new
 
-=head2 _url
-
-Internal helper. Returns the PAN-OS API endpoint.
-
-=cut
-
+# Internal helper. Returns the PAN-OS API endpoint.
 sub _url {
 	my ($self) = @_;
 
 	return $self->{options}{scheme} . '://' . $self->{options}{host} . '/api/';
 }
 
-=head2 _uri_escape
-
-Internal helper. Minimal percent encoder so URI::Escape is not needed.
-
-=cut
-
+# Internal helper. Minimal percent encoder so URI::Escape is not needed.
 sub _uri_escape {
 	my ( $self, $string ) = @_;
 
@@ -264,13 +254,8 @@ sub _uri_escape {
 	return $string;
 }
 
-=head2 _form_body
-
-Internal helper. Builds an x-www-form-urlencoded body from the passed
-parameters, in a fixed key order so the output is stable.
-
-=cut
-
+# Internal helper. Builds an x-www-form-urlencoded body from the passed
+# parameters, in a fixed key order so the output is stable.
 sub _form_body {
 	my ( $self, %params ) = @_;
 
@@ -283,13 +268,8 @@ sub _form_body {
 	return join( '&', @pairs );
 } ## end sub _form_body
 
-=head2 _uid_message
-
-Internal helper. Builds the User-ID uid-message XML for the given action
-('register' or 'unregister') and IP, tagging it with the configured tag.
-
-=cut
-
+# Internal helper. Builds the User-ID uid-message XML for the given action
+# ('register' or 'unregister') and IP, tagging it with the configured tag.
 sub _uid_message {
 	my ( $self, $action, $ip ) = @_;
 
@@ -305,12 +285,7 @@ sub _uid_message {
 		. '></payload></uid-message>';
 } ## end sub _uid_message
 
-=head2 _register_body
-
-Internal helper. Builds the form body for registering/unregistering an IP.
-
-=cut
-
+# Internal helper. Builds the form body for registering/unregistering an IP.
 sub _register_body {
 	my ( $self, $action, $ip ) = @_;
 
@@ -322,13 +297,8 @@ sub _register_body {
 	);
 } ## end sub _register_body
 
-=head2 _probe_body
-
-Internal helper. Builds the form body for a lightweight op command used to
-verify the key and connectivity.
-
-=cut
-
+# Internal helper. Builds the form body for a lightweight op command used to
+# verify the key and connectivity.
 sub _probe_body {
 	my ($self) = @_;
 
@@ -340,15 +310,10 @@ sub _probe_body {
 	);
 } ## end sub _probe_body
 
-=head2 _request
-
-Internal helper. POSTs the form body to the PAN-OS API via LWP::UserAgent,
-returning the response body on success and dying otherwise. PAN-OS answers
-with XML; a top level C<< status="success" >> is treated as success. Never
-called in testing mode.
-
-=cut
-
+# Internal helper. POSTs the form body to the PAN-OS API via LWP::UserAgent,
+# returning the response body on success and dying otherwise. PAN-OS answers
+# with XML; a top level status="success" is treated as success. Never
+# called in testing mode.
 sub _request {
 	my ( $self, $body ) = @_;
 
@@ -549,15 +514,10 @@ sub unban {
 	delete( $self->{banned}{ $opts{ban} } );
 } ## end sub unban
 
-=head2 _valid_cidr
-
-Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
-IPv6 CIDR range, that is an address followed by C</> and a prefix length that
-is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
-IPv6). Returns false otherwise.
-
-=cut
-
+# Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
+# IPv6 CIDR range, that is an address followed by "/" and a prefix length that
+# is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
+# IPv6). Returns false otherwise.
 sub _valid_cidr {
 	my ( $self, $cidr ) = @_;
 
@@ -908,34 +868,89 @@ sub flush {
 
 =head1 ERROR CODES / FLAGS
 
-Error handling is provided by L<Error::Helper>. All errors are considered
-fatal.
+Error handling is provided by L<Error::Helper>. All
+errors are considered fatal.
 
-    1  notInited
-    6  invalidPrefixSpecified
-    7  invalidName
-    8  optionsNotHash
-    9  noBanItem
-    10 banItemNotIP
-    12 backendInitError
-    13 banFailed
-    14 unbanFailed
-    15 listFailed
-    16 reInitFailed
-    17 teardownFailed
-    18 alreadyInited
-    23 initFailed
-    24 checkFailed
-    25 flushFailed
-    26 banCidrFailed
-    27 unbanCidrFailed
-    28 cidrItemNotCidr
-    29 cidrNotSupported
-    30 listCidrFailed
-    31 keyNotDefined
-    32 portsNotSupported
-    33 protocolsNotSupported
-    34 hostNotDefined
+=head2 1, notInited
+
+The backend has not been inited yet.
+
+=head2 6, invalidPrefixSpecified
+
+The specified prefix did not match /^[a-zA-Z0-9]+$/.
+
+=head2 7, invalidName
+
+The name is either undef or does not match /^[a-zA-Z0-9\-]+$/.
+
+=head2 8, optionsNotHash
+
+The item passed to new for options is not a hash.
+
+=head2 9, noBanItem
+
+No IP or CIDR range specified to ban or unban.
+
+=head2 10, banItemNotIP
+
+The item to ban is not an IP. Either wrong ref type or regexp
+test using L<Regexp::IPv4> and L<Regexp::IPv6> failed.
+
+=head2 12, backendInitError
+
+Failed to init the backend.
+
+=head2 13, banFailed
+
+Failed to ban the item.
+
+=head2 14, unbanFailed
+
+Failed to unban the item.
+
+=head2 15, listFailed
+
+Failed to get a list of bans.
+
+=head2 16, reInitFailed
+
+Failed to re_init the backend.
+
+=head2 17, teardownFailed
+
+Failed to teardown the backend.
+
+=head2 18, alreadyInited
+
+init called, but the backend has already been inited.
+
+=head2 23, initFailed
+
+init failed. Probing the API with an op command failed.
+
+=head2 24, checkFailed
+
+The backend check raised an error.
+
+=head2 25, flushFailed
+
+Failed to flush the bans.
+
+=head2 26, portsNotSupported
+
+Ports were specified, but the backend does not support ports.
+
+=head2 27, protocolsNotSupported
+
+Protocols were specified, but the backend does not support protocols.
+
+=head2 30, hostNotDefined
+
+The option host is undef or blank.
+
+=head2 31, keyNotDefined
+
+The option key is undef or blank.
 
 =head2 32, banCidrFailed
 

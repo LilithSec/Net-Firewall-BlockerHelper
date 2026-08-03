@@ -280,24 +280,14 @@ sub new {
 	return $self;
 } ## end sub new
 
-=head2 _base_url
-
-Internal helper. Returns the NITRO config API base URL.
-
-=cut
-
+# Internal helper. Returns the NITRO config API base URL.
 sub _base_url {
 	my ($self) = @_;
 
 	return $self->{options}{scheme} . '://' . $self->{options}{host} . '/nitro/v1/config';
 }
 
-=head2 _uri_escape
-
-Internal helper. Minimal percent encoder so URI::Escape is not needed.
-
-=cut
-
+# Internal helper. Minimal percent encoder so URI::Escape is not needed.
 sub _uri_escape {
 	my ( $self, $string ) = @_;
 
@@ -306,13 +296,8 @@ sub _uri_escape {
 	return $string;
 }
 
-=head2 _request
-
-Internal helper. Performs a HTTP request via LWP::UserAgent, dying with a
-explanation on any HTTP level failure. Never called in testing mode.
-
-=cut
-
+# Internal helper. Performs a HTTP request via LWP::UserAgent, dying with a
+# explanation on any HTTP level failure. Never called in testing mode.
 sub _request {
 	my ( $self, $method, $url, $body ) = @_;
 
@@ -465,13 +450,8 @@ sub ban {
 	$self->{banned}{ $opts{ban} } = 1;
 } ## end sub ban
 
-=head2 _unban_url
-
-Internal helper. Returns the URL used to remove the binding for the passed
-IP.
-
-=cut
-
+# Internal helper. Returns the URL used to remove the binding for the passed
+# IP.
 sub _unban_url {
 	my ( $self, $ip ) = @_;
 
@@ -813,32 +793,86 @@ sub flush {
 
 =head1 ERROR CODES / FLAGS
 
-Error handling is provided by L<Error::Helper>. All errors are considered
-fatal.
+Error handling is provided by L<Error::Helper>. All
+errors are considered fatal.
 
-    1  notInited
-    6  invalidPrefixSpecified
-    7  invalidName
-    8  optionsNotHash
-    9  noBanItem
-    10 banItemNotIP
-    12 backendInitError
-    13 banFailed
-    14 unbanFailed
-    15 listFailed
-    16 reInitFailed
-    17 teardownFailed
-    18 alreadyInited
-    23 initFailed
-    24 checkFailed
-    25 flushFailed
-    26 portsNotSupported
-    27 protocolsNotSupported
-    28 optionInvalid
+=head2 1, notInited
 
-=head2 32, cidrNotSupported
+The backend has not been inited yet.
 
-The backend does not support CIDR bans.
+=head2 6, invalidPrefixSpecified
+
+The specified prefix did not match /^[a-zA-Z0-9]+$/.
+
+=head2 7, invalidName
+
+The name is either undef or does not match /^[a-zA-Z0-9\-]+$/.
+
+=head2 8, optionsNotHash
+
+The item passed to new for options is not a hash.
+
+=head2 9, noBanItem
+
+No IP specified to ban or unban.
+
+=head2 10, banItemNotIP
+
+The item to ban is not an IP. Either wrong ref type or regexp
+test using L<Regexp::IPv4> and L<Regexp::IPv6> failed.
+
+=head2 12, backendInitError
+
+Failed to init the backend.
+
+=head2 13, banFailed
+
+Failed to ban the item.
+
+=head2 14, unbanFailed
+
+Failed to unban the item.
+
+=head2 15, listFailed
+
+Failed to get a list of bans.
+
+=head2 16, reInitFailed
+
+Failed to re_init the backend.
+
+=head2 17, teardownFailed
+
+Failed to teardown the backend.
+
+=head2 18, alreadyInited
+
+init called, but the backend has already been inited.
+
+=head2 23, initFailed
+
+Probing the NITRO API during init failed.
+
+=head2 24, checkFailed
+
+The backend check raised an error.
+
+=head2 25, flushFailed
+
+Failed to flush the bans.
+
+=head2 26, portsNotSupported
+
+The netscaler backend blocks whole IPs and does not support ports.
+
+=head2 27, protocolsNotSupported
+
+The netscaler backend blocks whole IPs and does not support protocols.
+
+=head2 28, optionInvalid
+
+One of the options, such as host, auth, dataset, scheme, or timeout, is
+invalid or missing.
 
 =head2 29, banCidrFailed
 
@@ -853,10 +887,13 @@ Failed to unban the CIDR range.
 The item to ban is not a CIDR range. Either wrong ref type or it is not an
 IPv4 or IPv6 address followed by a prefix length valid for its family.
 
+=head2 32, cidrNotSupported
+
+The backend does not support CIDR bans.
+
 =head2 33, listCidrFailed
 
 Failed to get a list of CIDR bans.
-
 
 =head1 AUTHOR
 

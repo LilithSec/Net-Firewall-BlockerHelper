@@ -308,14 +308,9 @@ sub new {
 	return $self;
 } ## end sub new
 
-=head2 _rule_specs
-
-Internal helper. Returns the list of ufw rule specifications (the part
-after deny/reject) for the passed IP, based on the configured protocols and
-ports.
-
-=cut
-
+# Internal helper. Returns the list of ufw rule specifications (the part
+# after deny/reject) for the passed IP, based on the configured protocols and
+# ports.
 sub _rule_specs {
 	my ( $self, $ip ) = @_;
 
@@ -348,15 +343,10 @@ sub _rule_specs {
 	return @specs;
 } ## end sub _rule_specs
 
-=head2 _kill_commands
-
-Internal helper. Returns the commands used to kill existing
-connections/state for the passed IP, per the configured kill mode. The kill
-is scoped to the configured protocols so protocols that are not being
-blocked are left alone.
-
-=cut
-
+# Internal helper. Returns the commands used to kill existing
+# connections/state for the passed IP, per the configured kill mode. The kill
+# is scoped to the configured protocols so protocols that are not being
+# blocked are left alone.
 sub _kill_commands {
 	my ( $self, $ip ) = @_;
 
@@ -411,12 +401,7 @@ sub _kill_commands {
 	return @commands;
 } ## end sub _kill_commands
 
-=head2 _status_command
-
-Internal helper. Returns the command used to verify ufw is enabled.
-
-=cut
-
+# Internal helper. Returns the command used to verify ufw is enabled.
 sub _status_command {
 	my ($self) = @_;
 
@@ -619,15 +604,10 @@ sub unban {
 	delete( $self->{banned}{ $opts{ban} } );
 } ## end sub unban
 
-=head2 _valid_cidr
-
-Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
-IPv6 CIDR range, that is an address followed by C</> and a prefix length that
-is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
-IPv6). Returns false otherwise.
-
-=cut
-
+# Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
+# IPv6 CIDR range, that is an address followed by "/" and a prefix length that
+# is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
+# IPv6). Returns false otherwise.
 sub _valid_cidr {
 	my ( $self, $cidr ) = @_;
 
@@ -1026,36 +1006,119 @@ sub flush {
 
 =head1 ERROR CODES / FLAGS
 
-Error handling is provided by L<Error::Helper>. All errors are considered
-fatal.
+Error handling is provided by L<Error::Helper>. All
+errors are considered fatal.
 
-    1  notInited
-    2  invalidPortSpecified
-    3  portsNotArray
-    4  protocolsNotArray
-    5  invalidProtocolSpecified
-    6  invalidPrefixSpecified
-    7  invalidName
-    8  optionsNotHash
-    9  noBanItem
-    10 banItemNotIP
-    12 backendInitError
-    13 banFailed
-    14 unbanFailed
-    15 listFailed
-    16 reInitFailed
-    17 teardownFailed
-    18 alreadyInited
-    19 killInvalid
-    20 typeInvalid
-    23 initFailed
-    24 checkFailed
-    25 flushFailed
-    26 banCidrFailed
-    27 unbanCidrFailed
-    28 cidrItemNotCidr
-    29 cidrNotSupported
-    30 listCidrFailed
+=head2 1, notInited
+
+The backend has not been inited yet.
+
+=head2 2, invalidPortSpecified
+
+Port is either not an int within the range 1 to 65535 or a name that can be resolved by getservbyname.
+
+=head2 3, portsNotArray
+
+The data passed to new for ports is not an array.
+
+=head2 4, protocolsNotArray
+
+The data passed to new for protocols is not an array.
+
+=head2 5, invalidProtocolSpecified
+
+The specified protocol could not be resolved via getprotobyname or is not
+one understood by ufw.
+
+=head2 6, invalidPrefixSpecified
+
+The specified prefix did not match /^[a-zA-Z0-9]+$/.
+
+=head2 7, invalidName
+
+The name is either undef or does not match /^[a-zA-Z0-9\-]+$/.
+
+=head2 8, optionsNotHash
+
+The item passed to new for options is not a hash.
+
+=head2 9, noBanItem
+
+No IP or CIDR range specified to ban or unban.
+
+=head2 10, banItemNotIP
+
+The item to ban is not an IP. Either wrong ref type or regexp
+test using L<Regexp::IPv4> and L<Regexp::IPv6> failed.
+
+=head2 12, backendInitError
+
+Failed to init the backend.
+
+=head2 13, banFailed
+
+Failed to ban the item.
+
+=head2 14, unbanFailed
+
+Failed to unban the item.
+
+=head2 15, listFailed
+
+Failed to get a list of bans.
+
+=head2 16, reInitFailed
+
+Failed to re_init the backend.
+
+=head2 17, teardownFailed
+
+Failed to teardown the backend.
+
+=head2 18, alreadyInited
+
+init called, but the backend has already been inited.
+
+=head2 19, killInvalid
+
+The option kill is not '', 'ss', or 'conntrack'.
+
+=head2 20, typeInvalid
+
+The option type is not 'deny' or 'reject'.
+
+=head2 23, initFailed
+
+init failed. ufw does not appear to be enabled.
+
+=head2 24, checkFailed
+
+The backend check raised an error.
+
+=head2 25, flushFailed
+
+Failed to flush the bans.
+
+=head2 26, banCidrFailed
+
+Failed to ban the CIDR range.
+
+=head2 27, unbanCidrFailed
+
+Failed to unban the CIDR range.
+
+=head2 28, cidrItemNotCidr
+
+The item to ban is not a CIDR range. Either wrong ref type or it is not an
+IPv4 or IPv6 address followed by a prefix length valid for its family.
+
+=head2 29, cidrNotSupported
+
+The backend does not support CIDR bans.
+
+=head2 30, listCidrFailed
+
+Failed to get a list of CIDR bans.
 
 =head1 AUTHOR
 

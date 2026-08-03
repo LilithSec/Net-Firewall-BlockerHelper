@@ -133,8 +133,8 @@ sub new {
 			all_errors_fatal => 1,
 			# all_fatal is what Error::Helper 2.1.0 actually checks; all_errors_fatal
 			# is kept for the name documented in its POD
-			all_fatal        => 1,
-			flags            => {
+			all_fatal => 1,
+			flags     => {
 				1  => 'noBackendSpecified',
 				2  => 'invalidPortSpecified',
 				3  => 'portsNotArray',
@@ -223,7 +223,7 @@ sub new {
 				}
 				$ports{$port} = 1;
 				#push( @{ $self->{ports} }, $port );
-			} ## end else [ if ( $item =~ /^[0-9]+$/ && $item >= 1 ) ]
+			} ## end else [ if ( $item =~ /^[0-9]+$/ && $item >= 1 && ...)]
 		} ## end foreach my $item ( @{ $opts{ports} } )
 		my @port_keys = keys(%ports);
 		@port_keys = sort { $a <=> $b } @port_keys;
@@ -317,7 +317,7 @@ sub init_backend {
 	my ( $self, %opts ) = @_;
 
 	$self->errorblank;
-	$self->{test_data}=undef;
+	$self->{test_data} = undef;
 
 	my $backend = 'Net::Firewall::BlockerHelper::backends::' . $self->{backend};
 	my $backend_obj;
@@ -360,18 +360,13 @@ sub init_backend {
 	$self->{backend_obj} = $backend_obj;
 } ## end sub init_backend
 
-=head2 _self_heal
-
-Internal helper. If self healing is enabled and the backend is inited, ask
-the backend to check that its firewall setup is still present and re_init it
-if it is not. This is the fail2ban actioncheck-before-action behavior. Both
-the check and re_init are best effort; any failure is left for the following
-ban/unban to surface.
-
-Honors a per-call C<self_heal> override passed via C<%opts>.
-
-=cut
-
+# Internal helper. If self healing is enabled and the backend is inited, ask
+# the backend to check that its firewall setup is still present and re_init it
+# if it is not. This is the fail2ban actioncheck-before-action behavior. Both
+# the check and re_init are best effort; any failure is left for the following
+# ban/unban to surface.
+#
+# Honors a per-call self_heal override passed via %opts.
 sub _self_heal {
 	my ( $self, %opts ) = @_;
 
@@ -388,20 +383,15 @@ sub _self_heal {
 			# the setup was removed externally, rebuild it and re-add the bans
 			eval { $self->{backend_obj}->re_init; };
 		}
-	}
+	} ## end if ( $heal && defined( $self->{backend_obj...}))
 
 	return;
 } ## end sub _self_heal
 
-=head2 _valid_cidr
-
-Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
-IPv6 CIDR range, that is an address followed by C</> and a prefix length that
-is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
-IPv6). Returns false otherwise.
-
-=cut
-
+# Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
+# IPv6 CIDR range, that is an address followed by "/" and a prefix length that
+# is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
+# IPv6). Returns false otherwise.
 sub _valid_cidr {
 	my ( $self, $cidr ) = @_;
 
@@ -428,7 +418,7 @@ sub ban {
 	my ( $self, %opts ) = @_;
 
 	$self->errorblank;
-	$self->{test_data}=undef;
+	$self->{test_data} = undef;
 
 	if ( !defined( $opts{ban} ) ) {
 		$self->{error}       = 9;
@@ -545,7 +535,7 @@ sub unban {
 	my ( $self, %opts ) = @_;
 
 	$self->errorblank;
-	$self->{test_data}=undef;
+	$self->{test_data} = undef;
 
 	if ( !defined( $opts{ban} ) ) {
 		$self->{error}       = 9;
@@ -661,7 +651,7 @@ sub list {
 	my ( $self, %opts ) = @_;
 
 	$self->errorblank;
-	$self->{test_data}=undef;
+	$self->{test_data} = undef;
 
 	if ( !defined( $self->{backend_obj} ) ) {
 		$self->{error}       = 15;
@@ -726,7 +716,7 @@ sub re_init {
 	my ( $self, %opts ) = @_;
 
 	$self->errorblank;
-	$self->{test_data}=undef;
+	$self->{test_data} = undef;
 
 	if ( !defined( $self->{backend_obj} ) ) {
 		$self->{error}       = 16;
@@ -754,7 +744,7 @@ sub teardown {
 	my ( $self, %opts ) = @_;
 
 	$self->errorblank;
-	$self->{test_data}=undef;
+	$self->{test_data} = undef;
 
 	if ( !defined( $self->{backend_obj} ) ) {
 		$self->{error}       = 17;
@@ -1001,18 +991,13 @@ L<https://metacpan.org/release/Net-Firewall-BlockerHelper>
 
 =back
 
-
-=head1 ACKNOWLEDGEMENTS
-
-
 =head1 LICENSE AND COPYRIGHT
 
-This software is Copyright (c) 2023 by Zane C. Bowers-Hadley.
+This software is Copyright (c) 2026 by Zane C. Bowers-Hadley.
 
 This is free software, licensed under:
 
   The GNU Lesser General Public License, Version 2.1, February 1999
-
 
 =cut
 

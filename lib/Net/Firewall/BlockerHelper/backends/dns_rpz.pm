@@ -215,13 +215,8 @@ sub new {
 	return $self;
 } ## end sub new
 
-=head2 _owner
-
-Internal helper. Returns the RPZ owner name for the passed IP: the reversed
-address in RPZ IP format under the configured trigger and zone.
-
-=cut
-
+# Internal helper. Returns the RPZ owner name for the passed IP: the reversed
+# address in RPZ IP format under the configured trigger and zone.
 sub _owner {
 	my ( $self, $ip ) = @_;
 
@@ -269,13 +264,8 @@ sub _owner {
 	return $rpz_ip . '.rpz-' . $self->{options}{trigger} . '.' . $self->{options}{zone};
 } ## end sub _owner
 
-=head2 _v6_groups
-
-Internal helper. Expands an IPv6 IP to its eight groups, each hex with leading
-zeros stripped ('0' for a zero group).
-
-=cut
-
+# Internal helper. Expands an IPv6 IP to its eight groups, each hex with leading
+# zeros stripped ('0' for a zero group).
 sub _v6_groups {
 	my ( $self, $ip ) = @_;
 
@@ -300,13 +290,8 @@ sub _v6_groups {
 	return @groups;
 } ## end sub _v6_groups
 
-=head2 _nsupdate_command
-
-Internal helper. Returns the shell command piping the given update statements
-into nsupdate, wrapped with the optional server line, zone, and send.
-
-=cut
-
+# Internal helper. Returns the shell command piping the given update statements
+# into nsupdate, wrapped with the optional server line, zone, and send.
 sub _nsupdate_command {
 	my ( $self, @updates ) = @_;
 
@@ -326,13 +311,8 @@ sub _nsupdate_command {
 		. $self->{options}{keyfile} . "'";
 } ## end sub _nsupdate_command
 
-=head2 _ban_command / _unban_command
-
-Internal helpers. Return the nsupdate command that adds/removes the RPZ record
-for the IP.
-
-=cut
-
+# Internal helpers. Return the nsupdate command that adds/removes the RPZ record
+# for the IP.
 sub _ban_command {
 	my ( $self, $ip ) = @_;
 
@@ -519,15 +499,10 @@ sub list {
 	return keys( %{ $self->{banned} } );
 }
 
-=head2 _valid_cidr
-
-Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
-IPv6 CIDR range, that is an address followed by C</> and a prefix length that
-is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
-IPv6). Returns false otherwise.
-
-=cut
-
+# Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
+# IPv6 CIDR range, that is an address followed by "/" and a prefix length that
+# is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
+# IPv6). Returns false otherwise.
 sub _valid_cidr {
 	my ( $self, $cidr ) = @_;
 
@@ -757,30 +732,93 @@ sub flush {
 
 =head1 ERROR CODES / FLAGS
 
-    1  notInited
-    8  optionsNotHash
-    9  noBanItem
-    10 banItemNotIP
-    12 backendInitError
-    13 banFailed
-    14 unbanFailed
-    15 listFailed
-    16 reInitFailed
-    17 teardownFailed
-    18 alreadyInited
-    20 triggerInvalid
-    23 initFailed
-    24 checkFailed
-    25 flushFailed
-    26 portsNotSupported
-    27 protocolsNotSupported
-    30 zoneInvalid
-    31 keyfileInvalid
-    28 cidrItemNotCidr
-    29 cidrNotSupported
-    32 banCidrFailed
-    33 unbanCidrFailed
-    34 listCidrFailed
+Error handling is provided by L<Error::Helper>. All
+errors are considered fatal.
+
+=head2 1, notInited
+
+The backend has not been inited yet.
+
+=head2 8, optionsNotHash
+
+The item passed to new for options is not a hash.
+
+=head2 9, noBanItem
+
+No IP specified to ban or unban.
+
+=head2 10, banItemNotIP
+
+The item to ban is not an IP. Either wrong ref type or regexp
+test using L<Regexp::IPv4> and L<Regexp::IPv6> failed.
+
+=head2 12, backendInitError
+
+Failed to init the backend.
+
+=head2 13, banFailed
+
+Failed to ban the item.
+
+=head2 14, unbanFailed
+
+Failed to unban the item.
+
+=head2 15, listFailed
+
+Failed to get a list of bans.
+
+=head2 16, reInitFailed
+
+Failed to re_init the backend.
+
+=head2 17, teardownFailed
+
+Failed to teardown the backend.
+
+=head2 18, alreadyInited
+
+init called, but the backend has already been inited.
+
+=head2 20, triggerInvalid
+
+The option trigger is not "client-ip" or "ip".
+
+=head2 23, initFailed
+
+Init failed. The keyfile does not exist or is not a file.
+
+=head2 24, checkFailed
+
+The backend check raised an error.
+
+=head2 25, flushFailed
+
+Failed to flush the bans.
+
+=head2 26, portsNotSupported
+
+The dns_rpz backend blocks whole IPs and does not support ports.
+
+=head2 27, protocolsNotSupported
+
+The dns_rpz backend blocks whole IPs and does not support protocols.
+
+=head2 30, zoneInvalid
+
+The option zone is undef or not a valid zone name.
+
+=head2 31, keyfileInvalid
+
+The option keyfile is undef or contains whitespace or single quotes.
+
+=head2 32, banCidrFailed
+
+Failed to ban the CIDR range.
+
+=head2 33, unbanCidrFailed
+
+Failed to unban the CIDR range.
 
 =head2 34, cidrItemNotCidr
 
@@ -790,14 +828,6 @@ IPv4 or IPv6 address followed by a prefix length valid for its family.
 =head2 35, cidrNotSupported
 
 The backend does not support CIDR bans.
-
-=head2 32, banCidrFailed
-
-Failed to ban the CIDR range.
-
-=head2 33, unbanCidrFailed
-
-Failed to unban the CIDR range.
 
 =head2 36, listCidrFailed
 

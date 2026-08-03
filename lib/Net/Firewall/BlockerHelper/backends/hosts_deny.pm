@@ -159,12 +159,7 @@ sub new {
 	return $self;
 } ## end sub new
 
-=head2 _markers
-
-Internal helper. Returns the begin and end marker lines for this instance.
-
-=cut
-
+# Internal helper. Returns the begin and end marker lines for this instance.
 sub _markers {
 	my ($self) = @_;
 
@@ -172,14 +167,9 @@ sub _markers {
 	return ( '# BEGIN ' . $tag, '# END ' . $tag );
 }
 
-=head2 _render_block
-
-Internal helper. Builds this instance's marked region from the current ban
-list. Returns an empty string when there is nothing banned so no stray
-markers are left in the file.
-
-=cut
-
+# Internal helper. Builds this instance's marked region from the current ban
+# list. Returns an empty string when there is nothing banned so no stray
+# markers are left in the file.
 sub _render_block {
 	my ($self) = @_;
 
@@ -196,13 +186,8 @@ sub _render_block {
 	return join( "\n", @lines ) . "\n";
 } ## end sub _render_block
 
-=head2 _strip_block
-
-Internal helper. Given the full file contents, returns them with this
-instance's marked region (and only this instance's) removed.
-
-=cut
-
+# Internal helper. Given the full file contents, returns them with this
+# instance's marked region (and only this instance's) removed.
 sub _strip_block {
 	my ( $self, $content ) = @_;
 
@@ -213,13 +198,8 @@ sub _strip_block {
 	return $content;
 } ## end sub _strip_block
 
-=head2 _read
-
-Internal helper. Returns the current file contents, or the simulated outside
-content when testing, or '' when the file is absent.
-
-=cut
-
+# Internal helper. Returns the current file contents, or the simulated outside
+# content when testing, or '' when the file is absent.
 sub _read {
 	my ($self) = @_;
 
@@ -238,14 +218,9 @@ sub _read {
 	return defined($content) ? $content : '';
 } ## end sub _read
 
-=head2 _apply
-
-Internal helper. Rewrites the file with this instance's region refreshed from
-the current ban list, preserving all other content. In testing mode it
-records the rendered file in test_data instead.
-
-=cut
-
+# Internal helper. Rewrites the file with this instance's region refreshed from
+# the current ban list, preserving all other content. In testing mode it
+# records the rendered file in test_data instead.
 sub _apply {
 	my ( $self, $error_flag ) = @_;
 
@@ -529,15 +504,10 @@ sub flush {
 	$self->_apply(25);
 } ## end sub flush
 
-=head2 _valid_cidr
-
-Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
-IPv6 CIDR range, that is an address followed by C</> and a prefix length that
-is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
-IPv6). Returns false otherwise.
-
-=cut
-
+# Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
+# IPv6 CIDR range, that is an address followed by "/" and a prefix length that
+# is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
+# IPv6). Returns false otherwise.
 sub _valid_cidr {
 	my ( $self, $cidr ) = @_;
 
@@ -613,13 +583,16 @@ sub list_cidr {
 
 =head1 ERROR CODES / FLAGS
 
+Error handling is provided by L<Error::Helper>. All
+errors are considered fatal.
+
 =head2 1, notInited
 
-Backend has not been initted yet.
+The backend has not been inited yet.
 
 =head2 7, invalidName
 
-The name is undef.
+The name is either undef or does not match /^[a-zA-Z0-9\-]+$/.
 
 =head2 8, optionsNotHash
 
@@ -627,11 +600,12 @@ The item passed to new for options is not a hash.
 
 =head2 9, noBanItem
 
-No IP specified to ban.
+No IP specified to ban or unban.
 
 =head2 10, banItemNotIP
 
-The item to ban is not an IP.
+The item to ban is not an IP. Either wrong ref type or regexp
+test using L<Regexp::IPv4> and L<Regexp::IPv6> failed.
 
 =head2 12, backendInitError
 
@@ -659,7 +633,7 @@ Failed to teardown the backend.
 
 =head2 18, alreadyInited
 
-Backend has already been initiated.
+init called, but the backend has already been inited.
 
 =head2 24, checkFailed
 
@@ -671,7 +645,7 @@ Failed to flush the bans.
 
 =head2 31, fileWriteFailed
 
-The hosts.deny file could not be opened for writing.
+Failed to open the file for writing.
 
 =head2 32, banCidrFailed
 

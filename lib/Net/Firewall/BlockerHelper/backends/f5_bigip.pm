@@ -244,12 +244,7 @@ sub new {
 	return $self;
 } ## end sub new
 
-=head2 _uri_escape
-
-Internal helper. Minimal percent encoder so URI::Escape is not needed.
-
-=cut
-
+# Internal helper. Minimal percent encoder so URI::Escape is not needed.
 sub _uri_escape {
 	my ( $self, $string ) = @_;
 
@@ -258,12 +253,7 @@ sub _uri_escape {
 	return $string;
 }
 
-=head2 _json
-
-Internal helper. Returns a canonical JSON::PP encoder/decoder.
-
-=cut
-
+# Internal helper. Returns a canonical JSON::PP encoder/decoder.
 sub _json {
 	my ($self) = @_;
 
@@ -271,13 +261,8 @@ sub _json {
 	return JSON::PP->new->canonical->utf8;
 }
 
-=head2 _obj_url
-
-Internal helper. Returns the iControl REST URL for the managed address-list
-object, identified by C<< ~<partition>~<name> >>, url-escaped.
-
-=cut
-
+# Internal helper. Returns the iControl REST URL for the managed address-list
+# object, identified by ~<partition>~<name>, url-escaped.
 sub _obj_url {
 	my ($self) = @_;
 
@@ -290,13 +275,8 @@ sub _obj_url {
 		. $self->_uri_escape($id);
 } ## end sub _obj_url
 
-=head2 _render
-
-Internal helper. Builds the JSON body describing the full desired membership
-of the address-list, one address entry per currently banned IP, sorted.
-
-=cut
-
+# Internal helper. Builds the JSON body describing the full desired membership
+# of the address-list, one address entry per currently banned IP, sorted.
 sub _render {
 	my ($self) = @_;
 
@@ -307,14 +287,9 @@ sub _render {
 	return $self->_json->encode( { addresses => \@addresses } );
 } ## end sub _render
 
-=head2 _request
-
-Internal helper. Performs a HTTP request via LWP::UserAgent using HTTP basic
-auth, returning the decoded JSON body (or undef for an empty body) and dying
-with an explanation on any HTTP level failure. Never called in testing mode.
-
-=cut
-
+# Internal helper. Performs a HTTP request via LWP::UserAgent using HTTP basic
+# auth, returning the decoded JSON body (or undef for an empty body) and dying
+# with an explanation on any HTTP level failure. Never called in testing mode.
 sub _request {
 	my ( $self, $method, $url, $body ) = @_;
 
@@ -528,15 +503,10 @@ sub unban {
 	}
 } ## end sub unban
 
-=head2 _valid_cidr
-
-Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
-IPv6 CIDR range, that is an address followed by C</> and a prefix length that
-is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
-IPv6). Returns false otherwise.
-
-=cut
-
+# Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
+# IPv6 CIDR range, that is an address followed by "/" and a prefix length that
+# is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
+# IPv6). Returns false otherwise.
 sub _valid_cidr {
 	my ( $self, $cidr ) = @_;
 
@@ -868,35 +838,93 @@ sub flush {
 
 =head1 ERROR CODES / FLAGS
 
-Error handling is provided by L<Error::Helper>. All errors are considered
-fatal.
+Error handling is provided by L<Error::Helper>. All
+errors are considered fatal.
 
-    1  notInited
-    6  invalidPrefixSpecified
-    7  invalidName
-    8  optionsNotHash
-    9  noBanItem
-    10 banItemNotIP
-    12 backendInitError
-    13 banFailed
-    14 unbanFailed
-    15 listFailed
-    16 reInitFailed
-    17 teardownFailed
-    18 alreadyInited
-    23 initFailed
-    24 checkFailed
-    25 flushFailed
-    26 banCidrFailed
-    27 unbanCidrFailed
-    28 cidrItemNotCidr
-    29 cidrNotSupported
-    30 listCidrFailed
-    31 userNotDefined
-    32 passwordNotDefined
-    33 portsNotSupported
-    34 protocolsNotSupported
-    35 hostNotDefined
+=head2 1, notInited
+
+The backend has not been inited yet.
+
+=head2 6, invalidPrefixSpecified
+
+The specified prefix did not match /^[a-zA-Z0-9]+$/.
+
+=head2 7, invalidName
+
+The name is either undef or does not match /^[a-zA-Z0-9\-]+$/.
+
+=head2 8, optionsNotHash
+
+The item passed to new for options is not a hash.
+
+=head2 9, noBanItem
+
+No IP or CIDR range specified to ban or unban.
+
+=head2 10, banItemNotIP
+
+The item to ban is not an IP. Either wrong ref type or regexp
+test using L<Regexp::IPv4> and L<Regexp::IPv6> failed.
+
+=head2 12, backendInitError
+
+Failed to init the backend.
+
+=head2 13, banFailed
+
+Failed to ban the item.
+
+=head2 14, unbanFailed
+
+Failed to unban the item.
+
+=head2 15, listFailed
+
+Failed to get a list of bans.
+
+=head2 16, reInitFailed
+
+Failed to re_init the backend.
+
+=head2 17, teardownFailed
+
+Failed to teardown the backend.
+
+=head2 18, alreadyInited
+
+init called, but the backend has already been inited.
+
+=head2 23, initFailed
+
+Init failed. Probing the address-list object failed.
+
+=head2 24, checkFailed
+
+The backend check raised an error.
+
+=head2 25, flushFailed
+
+Failed to flush the bans.
+
+=head2 26, portsNotSupported
+
+The f5_bigip backend blocks whole IPs and does not support ports.
+
+=head2 27, protocolsNotSupported
+
+The f5_bigip backend blocks whole IPs and does not support protocols.
+
+=head2 30, hostNotDefined
+
+The option host is undef or blank.
+
+=head2 31, userNotDefined
+
+The option user is undef or blank.
+
+=head2 32, passwordNotDefined
+
+The option password is undef or blank.
 
 =head2 33, banCidrFailed
 

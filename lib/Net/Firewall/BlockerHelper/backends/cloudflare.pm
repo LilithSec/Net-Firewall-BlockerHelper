@@ -271,13 +271,8 @@ sub new {
 	return $self;
 } ## end sub new
 
-=head2 _endpoint
-
-Internal helper. Returns the access rules endpoint, zone level if the zone
-option is set and user level otherwise.
-
-=cut
-
+# Internal helper. Returns the access rules endpoint, zone level if the zone
+# option is set and user level otherwise.
 sub _endpoint {
 	my ($self) = @_;
 
@@ -287,12 +282,7 @@ sub _endpoint {
 	return 'https://api.cloudflare.com/client/v4/user/firewall/access_rules/rules';
 }
 
-=head2 _uri_escape
-
-Internal helper. Minimal percent encoder so URI::Escape is not needed.
-
-=cut
-
+# Internal helper. Minimal percent encoder so URI::Escape is not needed.
 sub _uri_escape {
 	my ( $self, $string ) = @_;
 
@@ -301,12 +291,7 @@ sub _uri_escape {
 	return $string;
 }
 
-=head2 _json
-
-Internal helper. Returns a canonical JSON::PP encoder/decoder.
-
-=cut
-
+# Internal helper. Returns a canonical JSON::PP encoder/decoder.
 sub _json {
 	my ($self) = @_;
 
@@ -314,14 +299,9 @@ sub _json {
 	return JSON::PP->new->canonical->utf8;
 }
 
-=head2 _request
-
-Internal helper. Performs a HTTP request via LWP::UserAgent, returning the
-decoded JSON on success and dying with a explanation on any HTTP or API
-level failure. Never called in testing mode.
-
-=cut
-
+# Internal helper. Performs a HTTP request via LWP::UserAgent, returning the
+# decoded JSON on success and dying with a explanation on any HTTP or API
+# level failure. Never called in testing mode.
 sub _request {
 	my ( $self, $method, $url, $body ) = @_;
 
@@ -483,13 +463,8 @@ sub ban {
 	$self->{banned}{ $opts{ban} } = 1;
 } ## end sub ban
 
-=head2 _unban_lookup_url
-
-Internal helper. Returns the lookup URL used to find the rule ID for the
-passed IP.
-
-=cut
-
+# Internal helper. Returns the lookup URL used to find the rule ID for the
+# passed IP.
 sub _unban_lookup_url {
 	my ( $self, $ip ) = @_;
 
@@ -507,14 +482,9 @@ sub _unban_lookup_url {
 		. $self->_uri_escape($ip);
 } ## end sub _unban_lookup_url
 
-=head2 _unban_ip
-
-Internal helper. Looks the rule for the IP up and deletes it. Dies on
-failure. A rule that can not be found is treated as already unbanned.
-Never called in testing mode.
-
-=cut
-
+# Internal helper. Looks the rule for the IP up and deletes it. Dies on
+# failure. A rule that can not be found is treated as already unbanned.
+# Never called in testing mode.
 sub _unban_ip {
 	my ( $self, $ip ) = @_;
 
@@ -602,15 +572,10 @@ sub unban {
 	delete( $self->{banned}{ $opts{ban} } );
 } ## end sub unban
 
-=head2 _valid_cidr
-
-Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
-IPv6 CIDR range, that is an address followed by C</> and a prefix length that
-is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
-IPv6). Returns false otherwise.
-
-=cut
-
+# Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
+# IPv6 CIDR range, that is an address followed by "/" and a prefix length that
+# is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
+# IPv6). Returns false otherwise.
 sub _valid_cidr {
 	my ( $self, $cidr ) = @_;
 
@@ -699,13 +664,8 @@ sub ban_cidr {
 	$self->{banned_cidr}{ $opts{ban} } = 1;
 } ## end sub ban_cidr
 
-=head2 _unban_cidr_lookup_url
-
-Internal helper. Returns the lookup URL used to find the rule ID for the
-passed CIDR range.
-
-=cut
-
+# Internal helper. Returns the lookup URL used to find the rule ID for the
+# passed CIDR range.
 sub _unban_cidr_lookup_url {
 	my ( $self, $cidr ) = @_;
 
@@ -1094,34 +1054,99 @@ sub flush {
 
 =head1 ERROR CODES / FLAGS
 
-Error handling is provided by L<Error::Helper>. All errors are considered
-fatal.
+Error handling is provided by L<Error::Helper>. All
+errors are considered fatal.
 
-    1  notInited
-    6  invalidPrefixSpecified
-    7  invalidName
-    8  optionsNotHash
-    9  noBanItem
-    10 banItemNotIP
-    12 backendInitError
-    13 banFailed
-    14 unbanFailed
-    15 listFailed
-    16 reInitFailed
-    17 teardownFailed
-    18 alreadyInited
-    20 modeInvalid
-    23 initFailed
-    24 checkFailed
-    25 flushFailed
-    26 portsNotSupported
-    27 protocolsNotSupported
-    28 optionInvalid
-    29 cidrItemNotCidr
-    30 cidrNotSupported
-    31 banCidrFailed
-    32 unbanCidrFailed
-    33 listCidrFailed
+=head2 1, notInited
+
+The backend has not been inited yet.
+
+=head2 6, invalidPrefixSpecified
+
+The specified prefix did not match /^[a-zA-Z0-9]+$/.
+
+=head2 7, invalidName
+
+The name is either undef or does not match /^[a-zA-Z0-9\-]+$/.
+
+=head2 8, optionsNotHash
+
+The item passed to new for options is not a hash.
+
+=head2 9, noBanItem
+
+No IP or CIDR range specified to ban or unban.
+
+=head2 10, banItemNotIP
+
+The item to ban is not an IP. Either wrong ref type or regexp
+test using L<Regexp::IPv4> and L<Regexp::IPv6> failed.
+
+=head2 12, backendInitError
+
+Failed to init the backend.
+
+=head2 13, banFailed
+
+Failed to ban the item.
+
+=head2 14, unbanFailed
+
+Failed to unban the item.
+
+=head2 15, listFailed
+
+Failed to get a list of bans.
+
+=head2 16, reInitFailed
+
+Failed to re_init the backend.
+
+=head2 17, teardownFailed
+
+Failed to teardown the backend.
+
+=head2 18, alreadyInited
+
+init called, but the backend has already been inited.
+
+=head2 20, modeInvalid
+
+The option mode is not 'block', 'challenge', 'js_challenge', or
+'managed_challenge'.
+
+=head2 23, initFailed
+
+init failed. Probing the access rules endpoint failed.
+
+=head2 24, checkFailed
+
+The backend check raised an error.
+
+=head2 25, flushFailed
+
+Failed to flush the bans.
+
+=head2 26, portsNotSupported
+
+The cloudflare backend blocks whole IPs and does not support ports.
+
+=head2 27, protocolsNotSupported
+
+The cloudflare backend blocks whole IPs and does not support protocols.
+
+=head2 28, optionInvalid
+
+An option is invalid. Auth requires either the option token or both the
+options email and key, zone must be a zone ID, and timeout must be an int.
+
+=head2 29, banCidrFailed
+
+Failed to ban the CIDR range.
+
+=head2 30, unbanCidrFailed
+
+Failed to unban the CIDR range.
 
 =head2 31, cidrItemNotCidr
 
@@ -1131,14 +1156,6 @@ IPv4 or IPv6 address followed by a prefix length valid for its family.
 =head2 32, cidrNotSupported
 
 The backend does not support CIDR bans.
-
-=head2 29, banCidrFailed
-
-Failed to ban the CIDR range.
-
-=head2 30, unbanCidrFailed
-
-Failed to unban the CIDR range.
 
 =head2 33, listCidrFailed
 

@@ -684,12 +684,12 @@ sub flush {
 
 =head1 ERROR CODES / FLAGS
 
-Error handling is provided by L<Error::Helper>. All errors are considered
-fatal.
+Error handling is provided by L<Error::Helper>. All
+errors are considered fatal.
 
 =head2 1, notInited
 
-Backend has not been initted yet.
+The backend has not been inited yet.
 
 =head2 8, optionsNotHash
 
@@ -697,7 +697,7 @@ The item passed to new for options is not a hash.
 
 =head2 9, noBanItem
 
-No IP specified to ban.
+No IP specified to ban or unban.
 
 =head2 10, banItemNotIP
 
@@ -718,7 +718,7 @@ Failed to unban the item.
 
 =head2 15, listFailed
 
-Failed get a list of bans.
+Failed to get a list of bans.
 
 =head2 16, reInitFailed
 
@@ -730,11 +730,11 @@ Failed to teardown the backend.
 
 =head2 18, alreadyInited
 
-Backend has already been initiated.
+init called, but the backend has already been inited.
 
 =head2 20, modeInvalid
 
-The value for mode is not valid. Should be 'src' or 'dst'.
+The option mode is not 'src' or 'dst'.
 
 =head2 24, checkFailed
 
@@ -749,10 +749,6 @@ Failed to flush the bans.
 The interfaces option is either undef, not an array ref, or an empty array
 ref. It is required and must be a non-empty array ref.
 
-=head2 34, cidrNotSupported
-
-The backend does not support CIDR bans.
-
 =head2 31, banCidrFailed
 
 Failed to ban the CIDR range.
@@ -766,10 +762,13 @@ Failed to unban the CIDR range.
 The item to ban is not a CIDR range. Either wrong ref type or it is not an
 IPv4 or IPv6 address followed by a prefix length valid for its family.
 
+=head2 34, cidrNotSupported
+
+The backend does not support CIDR bans.
+
 =head2 35, listCidrFailed
 
 Failed to get a list of CIDR bans.
-
 
 =head1 AUTHOR
 

@@ -269,13 +269,8 @@ sub new {
 	return $self;
 } ## end sub new
 
-=head2 _record_name
-
-Internal helper. Returns the record name for the passed IPv4 IP, the octets
-reversed under the domain.
-
-=cut
-
+# Internal helper. Returns the record name for the passed IPv4 IP, the octets
+# reversed under the domain.
 sub _record_name {
 	my ( $self, $ip ) = @_;
 
@@ -284,13 +279,8 @@ sub _record_name {
 	return join( '.', reverse(@octets) ) . '.' . $self->{options}{domain};
 }
 
-=head2 _nsupdate_command
-
-Internal helper. Returns the shell command piping the passed update
-statements into nsupdate.
-
-=cut
-
+# Internal helper. Returns the shell command piping the passed update
+# statements into nsupdate.
 sub _nsupdate_command {
 	my ( $self, @statements ) = @_;
 
@@ -732,33 +722,89 @@ sub flush {
 
 =head1 ERROR CODES / FLAGS
 
-Error handling is provided by L<Error::Helper>. All errors are considered
-fatal.
+Error handling is provided by L<Error::Helper>. All
+errors are considered fatal.
 
-    1  notInited
-    6  invalidPrefixSpecified
-    7  invalidName
-    8  optionsNotHash
-    9  noBanItem
-    10 banItemNotIP
-    12 backendInitError
-    13 banFailed
-    14 unbanFailed
-    15 listFailed
-    16 reInitFailed
-    17 teardownFailed
-    18 alreadyInited
-    23 initFailed
-    24 checkFailed
-    25 flushFailed
-    26 portsNotSupported
-    27 protocolsNotSupported
-    28 optionInvalid
-    29 ipv6NotSupported
+=head2 1, notInited
 
-=head2 33, cidrNotSupported
+The backend has not been inited yet.
 
-The backend does not support CIDR bans.
+=head2 6, invalidPrefixSpecified
+
+The specified prefix did not match /^[a-zA-Z0-9]+$/.
+
+=head2 7, invalidName
+
+The name is either undef or does not match /^[a-zA-Z0-9\-]+$/.
+
+=head2 8, optionsNotHash
+
+The item passed to new for options is not a hash.
+
+=head2 9, noBanItem
+
+No IP specified to ban or unban.
+
+=head2 10, banItemNotIP
+
+The item to ban is not an IP. Either wrong ref type or regexp
+test using L<Regexp::IPv4> and L<Regexp::IPv6> failed.
+
+=head2 12, backendInitError
+
+Failed to init the backend.
+
+=head2 13, banFailed
+
+Failed to ban the item.
+
+=head2 14, unbanFailed
+
+Failed to unban the item.
+
+=head2 15, listFailed
+
+Failed to get a list of bans.
+
+=head2 16, reInitFailed
+
+Failed to re_init the backend.
+
+=head2 17, teardownFailed
+
+Failed to teardown the backend.
+
+=head2 18, alreadyInited
+
+init called, but the backend has already been inited.
+
+=head2 23, initFailed
+
+init failed. The keyfile does not exist or is not a file.
+
+=head2 24, checkFailed
+
+The backend check raised an error.
+
+=head2 25, flushFailed
+
+Failed to flush the bans.
+
+=head2 26, portsNotSupported
+
+Ports were specified, but the backend does not support ports.
+
+=head2 27, protocolsNotSupported
+
+Protocols were specified, but the backend does not support protocols.
+
+=head2 28, optionInvalid
+
+One of the specified options failed validation.
+
+=head2 29, ipv6NotSupported
+
+The backend only supports IPv4 and the item is an IPv6 IP.
 
 =head2 30, banCidrFailed
 
@@ -773,10 +819,13 @@ Failed to unban the CIDR range.
 The item to ban is not a CIDR range. Either wrong ref type or it is not an
 IPv4 or IPv6 address followed by a prefix length valid for its family.
 
+=head2 33, cidrNotSupported
+
+The backend does not support CIDR bans.
+
 =head2 34, listCidrFailed
 
 Failed to get a list of CIDR bans.
-
 
 =head1 AUTHOR
 

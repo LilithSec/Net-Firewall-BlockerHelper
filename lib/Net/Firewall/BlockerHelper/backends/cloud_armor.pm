@@ -161,13 +161,8 @@ sub new {
 	return $self;
 } ## end sub new
 
-=head2 _suffix
-
-Internal helper. Returns the trailing --project argument when configured, or
-an empty string.
-
-=cut
-
+# Internal helper. Returns the trailing --project argument when configured, or
+# an empty string.
 sub _suffix {
 	my ($self) = @_;
 
@@ -177,13 +172,8 @@ sub _suffix {
 	return '';
 } ## end sub _suffix
 
-=head2 _ranges
-
-Internal helper. Returns the current banned IPs, sorted, each as a CIDR
-(/32 for IPv4, /128 for IPv6), joined with commas.
-
-=cut
-
+# Internal helper. Returns the current banned IPs, sorted, each as a CIDR
+# (/32 for IPv4, /128 for IPv6), joined with commas.
 sub _ranges {
 	my ($self) = @_;
 
@@ -200,13 +190,8 @@ sub _ranges {
 	return join( ',', @ranges );
 } ## end sub _ranges
 
-=head2 _update_command
-
-Internal helper. Returns the gcloud command that sets the rule's source
-ranges to the currently banned set.
-
-=cut
-
+# Internal helper. Returns the gcloud command that sets the rule's source
+# ranges to the currently banned set.
 sub _update_command {
 	my ($self) = @_;
 
@@ -221,12 +206,7 @@ sub _update_command {
 		. $self->_suffix;
 } ## end sub _update_command
 
-=head2 _describe_command
-
-Internal helper. Returns the gcloud command used to verify the rule exists.
-
-=cut
-
+# Internal helper. Returns the gcloud command used to verify the rule exists.
 sub _describe_command {
 	my ($self) = @_;
 
@@ -239,13 +219,8 @@ sub _describe_command {
 		. $self->_suffix;
 } ## end sub _describe_command
 
-=head2 _run
-
-Internal helper. Runs a command unless testing, raising the passed error flag
-on a non-zero exit.
-
-=cut
-
+# Internal helper. Runs a command unless testing, raising the passed error flag
+# on a non-zero exit.
 sub _run {
 	my ( $self, $command, $error_flag ) = @_;
 
@@ -401,15 +376,10 @@ sub unban {
 	}
 } ## end sub unban
 
-=head2 _valid_cidr
-
-Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
-IPv6 CIDR range, that is an address followed by C</> and a prefix length that
-is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
-IPv6). Returns false otherwise.
-
-=cut
-
+# Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
+# IPv6 CIDR range, that is an address followed by "/" and a prefix length that
+# is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
+# IPv6). Returns false otherwise.
 sub _valid_cidr {
 	my ( $self, $cidr ) = @_;
 
@@ -477,7 +447,7 @@ sub ban_cidr {
 	if ( $self->{testing} ) {
 		$self->{frontend_obj}->{test_data} = $command;
 	} else {
-		$self->_run( $command, 26 );
+		$self->_run( $command, 31 );
 	}
 } ## end sub ban_cidr
 
@@ -534,7 +504,7 @@ sub unban_cidr {
 	if ( $self->{testing} ) {
 		$self->{frontend_obj}->{test_data} = $command;
 	} else {
-		$self->_run( $command, 27 );
+		$self->_run( $command, 32 );
 	}
 } ## end sub unban_cidr
 
@@ -706,25 +676,86 @@ sub flush {
 
 =head1 ERROR CODES / FLAGS
 
-    1  notInited
-    8  optionsNotHash
-    9  noBanItem
-    10 banItemNotIP
-    12 backendInitError
-    13 banFailed
-    14 unbanFailed
-    15 listFailed
-    16 reInitFailed
-    17 teardownFailed
-    18 alreadyInited
-    24 checkFailed
-    25 flushFailed
-    26 banCidrFailed
-    27 unbanCidrFailed
-    28 cidrItemNotCidr
-    29 cidrNotSupported
-    30 policyNotDefined
-    33 listCidrFailed
+Error handling is provided by L<Error::Helper>. All
+errors are considered fatal.
+
+=head2 1, notInited
+
+The backend has not been inited yet.
+
+=head2 8, optionsNotHash
+
+The item passed to new for options is not a hash.
+
+=head2 9, noBanItem
+
+No IP or CIDR range specified to ban or unban.
+
+=head2 10, banItemNotIP
+
+The item to ban is not an IP. Either wrong ref type or regexp
+test using L<Regexp::IPv4> and L<Regexp::IPv6> failed.
+
+=head2 12, backendInitError
+
+Failed to init the backend.
+
+=head2 13, banFailed
+
+Failed to ban the item.
+
+=head2 14, unbanFailed
+
+Failed to unban the item.
+
+=head2 15, listFailed
+
+Failed to get a list of bans.
+
+=head2 16, reInitFailed
+
+Failed to re_init the backend.
+
+=head2 17, teardownFailed
+
+Failed to teardown the backend.
+
+=head2 18, alreadyInited
+
+init called, but the backend has already been inited.
+
+=head2 24, checkFailed
+
+The backend check raised an error.
+
+=head2 25, flushFailed
+
+Failed to flush the bans.
+
+=head2 30, policyNotDefined
+
+The option policy is undef or blank.
+
+=head2 31, banCidrFailed
+
+Failed to ban the CIDR range.
+
+=head2 32, unbanCidrFailed
+
+Failed to unban the CIDR range.
+
+=head2 33, cidrItemNotCidr
+
+The item to ban is not a CIDR range. Either wrong ref type or it is not an
+IPv4 or IPv6 address followed by a prefix length valid for its family.
+
+=head2 34, cidrNotSupported
+
+The backend does not support CIDR bans.
+
+=head2 35, listCidrFailed
+
+Failed to get a list of CIDR bans.
 
 =head1 AUTHOR
 

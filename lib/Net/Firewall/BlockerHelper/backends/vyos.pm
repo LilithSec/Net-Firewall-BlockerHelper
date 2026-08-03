@@ -231,14 +231,9 @@ sub new {
 	return $self;
 } ## end sub new
 
-=head2 _group_path
-
-Internal helper. Returns the config path arrayref for the passed IP's family
-and operation. IPv4 uses the C<address-group> node and IPv6 the
-C<ipv6-address-group> node.
-
-=cut
-
+# Internal helper. Returns the config path arrayref for the passed IP's family
+# and operation. IPv4 uses the address-group node and IPv6 the
+# ipv6-address-group node.
 sub _group_path {
 	my ( $self, $ip ) = @_;
 
@@ -247,12 +242,7 @@ sub _group_path {
 	return [ 'firewall', 'group', $node, $self->{options}{group}, 'address', $ip ];
 }
 
-=head2 _uri_escape
-
-Internal helper. Minimal percent encoder so URI::Escape is not needed.
-
-=cut
-
+# Internal helper. Minimal percent encoder so URI::Escape is not needed.
 sub _uri_escape {
 	my ( $self, $string ) = @_;
 
@@ -261,12 +251,7 @@ sub _uri_escape {
 	return $string;
 }
 
-=head2 _json
-
-Internal helper. Returns a canonical JSON::PP encoder/decoder.
-
-=cut
-
+# Internal helper. Returns a canonical JSON::PP encoder/decoder.
 sub _json {
 	my ($self) = @_;
 
@@ -274,29 +259,19 @@ sub _json {
 	return JSON::PP->new->canonical->utf8;
 }
 
-=head2 _op_json
-
-Internal helper. Returns the JSON string for a configuration operation on the
-passed IP. C<$op> is either 'set' or 'delete'. This is the C<data> value the
-VyOS API expects and, in testing mode, exactly what is recorded so the API key
-is never leaked.
-
-=cut
-
+# Internal helper. Returns the JSON string for a configuration operation on the
+# passed IP. $op is either 'set' or 'delete'. This is the "data" value the
+# VyOS API expects and, in testing mode, exactly what is recorded so the API key
+# is never leaked.
 sub _op_json {
 	my ( $self, $op, $ip ) = @_;
 
 	return $self->_json->encode( { op => $op, path => $self->_group_path($ip) } );
 }
 
-=head2 _form_body
-
-Internal helper. Returns the full C<< data=<url-escaped JSON>&key=<apikey> >>
-form body for a configuration operation on the passed IP. Only used in real
-mode, never in testing mode, so the key is not recorded.
-
-=cut
-
+# Internal helper. Returns the full data=<url-escaped JSON>&key=<apikey>
+# form body for a configuration operation on the passed IP. Only used in real
+# mode, never in testing mode, so the key is not recorded.
 sub _form_body {
 	my ( $self, $op, $ip ) = @_;
 
@@ -307,26 +282,16 @@ sub _form_body {
 		. $self->_uri_escape( $self->{options}{key} );
 } ## end sub _form_body
 
-=head2 _base_url
-
-Internal helper. Returns the base URL for the VyOS host.
-
-=cut
-
+# Internal helper. Returns the base URL for the VyOS host.
 sub _base_url {
 	my ($self) = @_;
 
 	return 'https://' . $self->{options}{host};
 }
 
-=head2 _retrieve_body
-
-Internal helper. Returns the JSON string used to retrieve the address-group
-config, used by init and check. In testing mode this is exactly what is
-recorded so the API key is never leaked.
-
-=cut
-
+# Internal helper. Returns the JSON string used to retrieve the address-group
+# config, used by init and check. In testing mode this is exactly what is
+# recorded so the API key is never leaked.
 sub _retrieve_body {
 	my ($self) = @_;
 
@@ -334,14 +299,9 @@ sub _retrieve_body {
 		{ op => 'showConfig', path => [ 'firewall', 'group', 'address-group', $self->{options}{group} ] } );
 }
 
-=head2 _retrieve_form_body
-
-Internal helper. Returns the full C<< data=<url-escaped JSON>&key=<apikey> >>
-form body used by init and check. Only used in real mode, never in testing
-mode, so the key is not recorded.
-
-=cut
-
+# Internal helper. Returns the full data=<url-escaped JSON>&key=<apikey>
+# form body used by init and check. Only used in real mode, never in testing
+# mode, so the key is not recorded.
 sub _retrieve_form_body {
 	my ($self) = @_;
 
@@ -352,14 +312,9 @@ sub _retrieve_form_body {
 		. $self->_uri_escape( $self->{options}{key} );
 } ## end sub _retrieve_form_body
 
-=head2 _request
-
-Internal helper. Performs a HTTP POST via LWP::UserAgent, POSTing the passed
-form-urlencoded body and dying with an explanation on any HTTP level failure.
-Never called in testing mode.
-
-=cut
-
+# Internal helper. Performs a HTTP POST via LWP::UserAgent, POSTing the passed
+# form-urlencoded body and dying with an explanation on any HTTP level failure.
+# Never called in testing mode.
 sub _request {
 	my ( $self, $method, $url, $body ) = @_;
 
@@ -571,15 +526,10 @@ sub unban {
 	delete( $self->{banned}{ $opts{ban} } );
 } ## end sub unban
 
-=head2 _valid_cidr
-
-Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
-IPv6 CIDR range, that is an address followed by C</> and a prefix length that
-is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
-IPv6). Returns false otherwise.
-
-=cut
-
+# Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
+# IPv6 CIDR range, that is an address followed by "/" and a prefix length that
+# is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
+# IPv6). Returns false otherwise.
 sub _valid_cidr {
 	my ( $self, $cidr ) = @_;
 
@@ -935,34 +885,91 @@ sub flush {
 
 =head1 ERROR CODES / FLAGS
 
-Error handling is provided by L<Error::Helper>. All errors are considered
-fatal.
+Error handling is provided by L<Error::Helper>. All
+errors are considered fatal.
 
-    1  notInited
-    6  invalidPrefixSpecified
-    7  invalidName
-    8  optionsNotHash
-    9  noBanItem
-    10 banItemNotIP
-    12 backendInitError
-    13 banFailed
-    14 unbanFailed
-    15 listFailed
-    16 reInitFailed
-    17 teardownFailed
-    18 alreadyInited
-    23 initFailed
-    24 checkFailed
-    25 flushFailed
-    26 banCidrFailed
-    27 unbanCidrFailed
-    28 cidrItemNotCidr
-    29 cidrNotSupported
-    30 listCidrFailed
-    31 keyNotDefined
-    40 portsNotSupported
-    41 protocolsNotSupported
-    42 hostNotDefined
+=head2 1, notInited
+
+The backend has not been inited yet.
+
+=head2 6, invalidPrefixSpecified
+
+The specified prefix did not match /^[a-zA-Z0-9]+$/.
+
+=head2 7, invalidName
+
+The name is either undef or does not match /^[a-zA-Z0-9\-]+$/.
+
+=head2 8, optionsNotHash
+
+The item passed to new for options is not a hash.
+
+=head2 9, noBanItem
+
+No IP or CIDR range specified to ban or unban.
+
+=head2 10, banItemNotIP
+
+The item to ban is not an IP. Either wrong ref type or regexp
+test using L<Regexp::IPv4> and L<Regexp::IPv6> failed.
+
+=head2 12, backendInitError
+
+Failed to init the backend.
+
+=head2 13, banFailed
+
+Failed to ban the item.
+
+=head2 14, unbanFailed
+
+Failed to unban the item.
+
+=head2 15, listFailed
+
+Failed to get a list of bans.
+
+=head2 16, reInitFailed
+
+Failed to re_init the backend.
+
+=head2 17, teardownFailed
+
+Failed to teardown the backend.
+
+=head2 18, alreadyInited
+
+init called, but the backend has already been inited.
+
+=head2 23, initFailed
+
+init failed. Probing the address-group config failed.
+
+=head2 24, checkFailed
+
+The backend check raised an error.
+
+=head2 25, flushFailed
+
+Failed to flush the bans.
+
+=head2 26, portsNotSupported
+
+Ports were specified, but this backend manages whole IPs and does not
+support ports.
+
+=head2 27, protocolsNotSupported
+
+Protocols were specified, but this backend manages whole IPs and does not
+support protocols.
+
+=head2 30, hostNotDefined
+
+The option host is undef or blank.
+
+=head2 31, keyNotDefined
+
+The option key is undef or blank.
 
 =head2 32, banCidrFailed
 

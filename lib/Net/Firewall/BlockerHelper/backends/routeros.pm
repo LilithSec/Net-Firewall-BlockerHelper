@@ -247,14 +247,9 @@ sub new {
 	return $self;
 } ## end sub new
 
-=head2 _ssh
-
-Internal helper. Returns the SSH command prefix string built from the
-ssh_cmd, ssh_port, identity, user, and host options, e.g.
-C<< ssh -p 22 -i /key admin@host >>.
-
-=cut
-
+# Internal helper. Returns the SSH command prefix string built from the
+# ssh_cmd, ssh_port, identity, user, and host options, e.g.
+# "ssh -p 22 -i /key admin@host".
 sub _ssh {
 	my ($self) = @_;
 
@@ -277,13 +272,8 @@ sub _ssh {
 	return $ssh;
 } ## end sub _ssh
 
-=head2 _remote
-
-Internal helper. Given a RouterOS CLI line, returns the full command to
-run it over SSH, e.g. C<< <_ssh> '<routeros_cli>' >>.
-
-=cut
-
+# Internal helper. Given a RouterOS CLI line, returns the full command to
+# run it over SSH, e.g. <_ssh> '<routeros_cli>'.
 sub _remote {
 	my ( $self, $routeros_cli ) = @_;
 
@@ -491,15 +481,10 @@ sub unban {
 	delete( $self->{banned}{ $opts{ban} } );
 } ## end sub unban
 
-=head2 _valid_cidr
-
-Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
-IPv6 CIDR range, that is an address followed by C</> and a prefix length that
-is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
-IPv6). Returns false otherwise.
-
-=cut
-
+# Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
+# IPv6 CIDR range, that is an address followed by "/" and a prefix length that
+# is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
+# IPv6). Returns false otherwise.
 sub _valid_cidr {
 	my ( $self, $cidr ) = @_;
 
@@ -928,7 +913,7 @@ errors are considered fatal.
 
 =head2 1, notInited
 
-Backend has not been initted yet.
+The backend has not been inited yet.
 
 =head2 8, optionsNotHash
 
@@ -936,7 +921,7 @@ The item passed to new for options is not a hash.
 
 =head2 9, noBanItem
 
-No IP specified to ban.
+No IP or CIDR range specified to ban or unban.
 
 =head2 10, banItemNotIP
 
@@ -957,7 +942,7 @@ Failed to unban the item.
 
 =head2 15, listFailed
 
-Failed get a list of bans.
+Failed to get a list of bans.
 
 =head2 16, reInitFailed
 
@@ -969,7 +954,7 @@ Failed to teardown the backend.
 
 =head2 18, alreadyInited
 
-Backend has already been initiated.
+init called, but the backend has already been inited.
 
 =head2 24, checkFailed
 
@@ -978,6 +963,10 @@ The backend check raised an error.
 =head2 25, flushFailed
 
 Failed to flush the bans.
+
+=head2 30, hostNotDefined
+
+The option host is undef or blank.
 
 =head2 31, banCidrFailed
 
@@ -996,14 +985,9 @@ IPv4 or IPv6 address followed by a prefix length valid for its family.
 
 The backend does not support CIDR bans.
 
-=head2 30, hostNotDefined
-
-The host option is either undef or blank.
-
 =head2 35, listCidrFailed
 
 Failed to get a list of CIDR bans.
-
 
 =head1 AUTHOR
 

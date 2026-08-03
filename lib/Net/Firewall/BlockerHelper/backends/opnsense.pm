@@ -272,20 +272,15 @@ sub new {
 	return $self;
 } ## end sub new
 
-=head2 _curl
-
-Internal helper. Builds and returns the curl command string used to talk
-to the OPNsense API.
-
-    my $command = $self->_curl( 'alias_util/list/' . $alias );
-    my $command = $self->_curl( 'alias_util/add/' . $alias, '{"address":"1.2.3.4"}' );
-
-The first argument is the method path appended to
-C<< <scheme>://<host>/api/firewall/ >>. The second argument, if defined,
-is passed as the JSON body via '-d'.
-
-=cut
-
+# Internal helper. Builds and returns the curl command string used to talk
+# to the OPNsense API.
+#
+#     my $command = $self->_curl( 'alias_util/list/' . $alias );
+#     my $command = $self->_curl( 'alias_util/add/' . $alias, '{"address":"1.2.3.4"}' );
+#
+# The first argument is the method path appended to
+# <scheme>://<host>/api/firewall/. The second argument, if defined,
+# is passed as the JSON body via '-d'.
 sub _curl {
 	my ( $self, $method_path, $data ) = @_;
 
@@ -486,15 +481,10 @@ sub unban {
 	delete( $self->{banned}{ $opts{ban} } );
 } ## end sub unban
 
-=head2 _valid_cidr
-
-Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
-IPv6 CIDR range, that is an address followed by C</> and a prefix length that
-is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
-IPv6). Returns false otherwise.
-
-=cut
-
+# Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
+# IPv6 CIDR range, that is an address followed by "/" and a prefix length that
+# is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
+# IPv6). Returns false otherwise.
 sub _valid_cidr {
 	my ( $self, $cidr ) = @_;
 
@@ -853,7 +843,7 @@ errors are considered fatal.
 
 =head2 1, notInited
 
-Backend has not been initted yet.
+The backend has not been inited yet.
 
 =head2 8, optionsNotHash
 
@@ -861,7 +851,7 @@ The item passed to new for options is not a hash.
 
 =head2 9, noBanItem
 
-No IP specified to ban.
+No IP or CIDR range specified to ban or unban.
 
 =head2 10, banItemNotIP
 
@@ -882,7 +872,7 @@ Failed to unban the item.
 
 =head2 15, listFailed
 
-Failed get a list of bans.
+Failed to get a list of bans.
 
 =head2 16, reInitFailed
 
@@ -894,7 +884,7 @@ Failed to teardown the backend.
 
 =head2 18, alreadyInited
 
-Backend has already been initiated.
+init called, but the backend has already been inited.
 
 =head2 24, checkFailed
 
@@ -903,6 +893,18 @@ The backend check raised an error.
 =head2 25, flushFailed
 
 Failed to flush the bans.
+
+=head2 30, hostNotDefined
+
+The option host is undef or blank.
+
+=head2 31, apiKeyNotDefined
+
+The option key is undef or blank.
+
+=head2 32, apiSecretNotDefined
+
+The option secret is undef or blank.
 
 =head2 33, banCidrFailed
 
@@ -924,26 +926,6 @@ The backend does not support CIDR bans.
 =head2 37, listCidrFailed
 
 Failed to get a list of CIDR bans.
-
-=head2 31, apiKeyNotDefined
-
-The key option is not defined or is blank.
-
-=head2 32, apiSecretNotDefined
-
-The secret option is not defined or is blank.
-
-=head2 40, portsNotSupported
-
-Ports are not supported by this backend.
-
-=head2 41, protocolsNotSupported
-
-Protocols are not supported by this backend.
-
-=head2 30, hostNotDefined
-
-The host option is not defined or is blank.
 
 =head1 AUTHOR
 

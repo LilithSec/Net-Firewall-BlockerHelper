@@ -2,7 +2,7 @@
 
 Helps manage (un)blocking IPs via various firewalls.
 
-Currently included backends are for...
+Currently included local backends are...
 
 - firewalld
 - hosts_deny (TCP wrappers /etc/hosts.deny; libwrap aware daemons only)
@@ -120,6 +120,11 @@ Rquirements...
 - Regexp::IPv6
 - Error::Helper
 
+And if using any of the HTTP backends...
+
+- LWP::UserAgent
+- LWP::Protocol::https
+
 To install...
 
 ```shell
@@ -133,4 +138,6 @@ Or via cpanm...
 
 ```
 cpanm Net::Firewall::BlockerHelper
+# If using any of the HTTP backends...
+cpanm LWP::UserAgent LWP::Protocol::https
 ```

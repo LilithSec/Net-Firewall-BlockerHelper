@@ -226,15 +226,10 @@ sub new {
 	return $self;
 } ## end sub new
 
-=head2 _route_command
-
-Internal helper. Builds the announce/withdraw command for the given verb
-('announce' or 'withdraw') and IP, in the syntax of the configured driver
-(exabgp via C<exabgpcli> or C<gobgp>), picking the family-appropriate next
-hop and prefix length and attaching the blackhole community.
-
-=cut
-
+# Internal helper. Builds the announce/withdraw command for the given verb
+# ('announce' or 'withdraw') and IP, in the syntax of the configured driver
+# (exabgp via exabgpcli or gobgp), picking the family-appropriate next
+# hop and prefix length and attaching the blackhole community.
 sub _route_command {
 	my ( $self, $verb, $ip ) = @_;
 
@@ -308,15 +303,10 @@ sub _route_command {
 	return $self->{options}{exabgpcli_cmd} . ' ' . $route;
 } ## end sub _route_command
 
-=head2 _route_command_cidr
-
-Internal helper. Like L</_route_command> but for a CIDR range. The passed
-value is already an address/prefix, so it is announced/withdrawn verbatim
-rather than having a host mask appended, with the family determined from the
-address portion of the range.
-
-=cut
-
+# Internal helper. Like _route_command but for a CIDR range. The passed
+# value is already an address/prefix, so it is announced/withdrawn verbatim
+# rather than having a host mask appended, with the family determined from the
+# address portion of the range.
 sub _route_command_cidr {
 	my ( $self, $verb, $cidr ) = @_;
 
@@ -390,13 +380,8 @@ sub _route_command_cidr {
 	return $self->{options}{exabgpcli_cmd} . ' ' . $route;
 } ## end sub _route_command_cidr
 
-=head2 _check_command
-
-Internal helper. Returns the driver-appropriate command used by L</check> to
-confirm the BGP daemon is reachable.
-
-=cut
-
+# Internal helper. Returns the driver-appropriate command used by check to
+# confirm the BGP daemon is reachable.
 sub _check_command {
 	my ($self) = @_;
 
@@ -567,15 +552,10 @@ sub unban {
 	delete( $self->{banned}{ $opts{ban} } );
 } ## end sub unban
 
-=head2 _valid_cidr
-
-Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
-IPv6 CIDR range, that is an address followed by C</> and a prefix length that
-is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
-IPv6). Returns false otherwise.
-
-=cut
-
+# Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
+# IPv6 CIDR range, that is an address followed by "/" and a prefix length that
+# is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
+# IPv6). Returns false otherwise.
 sub _valid_cidr {
 	my ( $self, $cidr ) = @_;
 
@@ -943,9 +923,12 @@ sub flush {
 
 =head1 ERROR CODES / FLAGS
 
+Error handling is provided by L<Error::Helper>. All
+errors are considered fatal.
+
 =head2 1, notInited
 
-Backend has not been initted yet.
+The backend has not been inited yet.
 
 =head2 8, optionsNotHash
 
@@ -953,11 +936,12 @@ The item passed to new for options is not a hash.
 
 =head2 9, noBanItem
 
-No IP specified to ban.
+No IP or CIDR range specified to ban or unban.
 
 =head2 10, banItemNotIP
 
-The item to ban is not an IP.
+The item to ban is not an IP. Either wrong ref type or regexp
+test using L<Regexp::IPv4> and L<Regexp::IPv6> failed.
 
 =head2 12, backendInitError
 
@@ -985,7 +969,7 @@ Failed to teardown the backend.
 
 =head2 18, alreadyInited
 
-Backend has already been initiated.
+init called, but the backend has already been inited.
 
 =head2 20, driverInvalid
 

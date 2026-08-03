@@ -318,13 +318,8 @@ sub new {
 	return $self;
 } ## end sub new
 
-=head2 _set_names
-
-Internal helper. Returns the IPv4 ipset name and IPv6 ipset name for this
-instance.
-
-=cut
-
+# Internal helper. Returns the IPv4 ipset name and IPv6 ipset name for this
+# instance.
 sub _set_names {
 	my ($self) = @_;
 
@@ -332,13 +327,8 @@ sub _set_names {
 	return ( $base . '_4', $base . '_6' );
 }
 
-=head2 _rule_args
-
-Internal helper. Returns a list of hashes, each with the direct interface
-family (ipv4/ipv6) and the iptables argument string for one block rule.
-
-=cut
-
+# Internal helper. Returns a list of hashes, each with the direct interface
+# family (ipv4/ipv6) and the iptables argument string for one block rule.
 sub _rule_args {
 	my ($self) = @_;
 
@@ -407,15 +397,10 @@ sub _rule_args {
 	return @rules;
 } ## end sub _rule_args
 
-=head2 _kill_commands
-
-Internal helper. Returns the conntrack commands used to drop existing
-connection tracking entries for the passed IP. When protocols are
-configured, the kill is scoped to them via -p so protocols that are not
-being blocked are left alone; otherwise every entry for the IP is dropped.
-
-=cut
-
+# Internal helper. Returns the conntrack commands used to drop existing
+# connection tracking entries for the passed IP. When protocols are
+# configured, the kill is scoped to them via -p so protocols that are not
+# being blocked are left alone; otherwise every entry for the IP is dropped.
 sub _kill_commands {
 	my ( $self, $ip ) = @_;
 
@@ -908,15 +893,10 @@ sub flush {
 	$self->{banned} = {};
 } ## end sub flush
 
-=head2 _valid_cidr
-
-Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
-IPv6 CIDR range, that is an address followed by C</> and a prefix length that
-is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
-IPv6). Returns false otherwise.
-
-=cut
-
+# Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
+# IPv6 CIDR range, that is an address followed by "/" and a prefix length that
+# is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
+# IPv6). Returns false otherwise.
 sub _valid_cidr {
 	my ( $self, $cidr ) = @_;
 
@@ -992,32 +972,102 @@ sub list_cidr {
 
 =head1 ERROR CODES / FLAGS
 
-Error handling is provided by L<Error::Helper>. All errors are considered
-fatal.
+Error handling is provided by L<Error::Helper>. All
+errors are considered fatal.
 
-    1  notInited
-    2  invalidPortSpecified
-    3  portsNotArray
-    4  protocolsNotArray
-    5  invalidPortSpecified
-    6  invalidPrefixSpecified
-    7  invalidName
-    8  optionsNotHash
-    9  noBanItem
-    10 banItemNotIP
-    12 backendInitError
-    13 banFailed
-    14 unbanFailed
-    15 listFailed
-    16 reInitFailed
-    17 teardownFailed
-    18 alreadyInited
-    19 chainInvalid
-    20 typeInvalid
-    21 nameTooLong
-    23 initFailed
-    24 checkFailed
-    25 flushFailed
+=head2 1, notInited
+
+The backend has not been inited yet.
+
+=head2 2, invalidPortSpecified
+
+Port is either not an int within the range 1 to 65535 or a name that can be resolved by getservbyname.
+
+=head2 3, portsNotArray
+
+The data passed to new for ports is not an array.
+
+=head2 4, protocolsNotArray
+
+The data passed to new for protocols is not an array.
+
+=head2 5, invalidPortSpecified
+
+Port is either not an int within the range 1 to 65535 or a name that can be resolved by getservbyname.
+
+=head2 6, invalidPrefixSpecified
+
+The specified prefix did not match /^[a-zA-Z0-9]+$/.
+
+=head2 7, invalidName
+
+The name is either undef or does not match /^[a-zA-Z0-9\-]+$/.
+
+=head2 8, optionsNotHash
+
+The item passed to new for options is not a hash.
+
+=head2 9, noBanItem
+
+No IP specified to ban or unban.
+
+=head2 10, banItemNotIP
+
+The item to ban is not an IP. Either wrong ref type or regexp
+test using L<Regexp::IPv4> and L<Regexp::IPv6> failed.
+
+=head2 12, backendInitError
+
+Failed to init the backend.
+
+=head2 13, banFailed
+
+Failed to ban the item.
+
+=head2 14, unbanFailed
+
+Failed to unban the item.
+
+=head2 15, listFailed
+
+Failed to get a list of bans.
+
+=head2 16, reInitFailed
+
+Failed to re_init the backend.
+
+=head2 17, teardownFailed
+
+Failed to teardown the backend.
+
+=head2 18, alreadyInited
+
+init called, but the backend has already been inited.
+
+=head2 19, chainInvalid
+
+The option chain does not match /^[a-zA-Z0-9_\-]+$/.
+
+=head2 20, typeInvalid
+
+The option type is either a ref or not "drop" or "reject".
+
+=head2 21, nameTooLong
+
+The combined prefix and name is longer than 29 characters, leaving no room
+for the _4/_6 suffix within the 31 character ipset name limit.
+
+=head2 23, initFailed
+
+Init failed. A command run during init exited non-zero.
+
+=head2 24, checkFailed
+
+The backend check raised an error.
+
+=head2 25, flushFailed
+
+Failed to flush the bans.
 
 =head2 26, banCidrFailed
 

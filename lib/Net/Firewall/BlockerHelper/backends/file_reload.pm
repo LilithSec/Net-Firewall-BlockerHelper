@@ -182,13 +182,8 @@ sub new {
 	return $self;
 } ## end sub new
 
-=head2 _render
-
-Internal helper. Builds the full file contents from the current ban list,
-sorted so the output is stable, wrapped in the configured header/footer.
-
-=cut
-
+# Internal helper. Builds the full file contents from the current ban list,
+# sorted so the output is stable, wrapped in the configured header/footer.
 sub _render {
 	my ($self) = @_;
 
@@ -208,15 +203,10 @@ sub _render {
 	return join( "\n", @lines ) . "\n";
 } ## end sub _render
 
-=head2 _apply
-
-Internal helper. Renders the file and runs the reload hook. In testing mode
-it records what would happen in test_data instead of touching the disk. The
-$error_flag is the error code to raise on a write/reload failure so the
-caller's context (ban vs unban vs ...) is preserved.
-
-=cut
-
+# Internal helper. Renders the file and runs the reload hook. In testing mode
+# it records what would happen in test_data instead of touching the disk. The
+# $error_flag is the error code to raise on a write/reload failure so the
+# caller's context (ban vs unban vs ...) is preserved.
 sub _apply {
 	my ( $self, $error_flag ) = @_;
 
@@ -379,15 +369,10 @@ sub unban {
 	$self->_apply(14);
 } ## end sub unban
 
-=head2 _valid_cidr
-
-Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
-IPv6 CIDR range, that is an address followed by C</> and a prefix length that
-is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
-IPv6). Returns false otherwise.
-
-=cut
-
+# Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
+# IPv6 CIDR range, that is an address followed by "/" and a prefix length that
+# is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
+# IPv6). Returns false otherwise.
 sub _valid_cidr {
 	my ( $self, $cidr ) = @_;
 
@@ -450,7 +435,7 @@ sub ban_cidr {
 	}
 
 	$self->{banned_cidr}{ $opts{ban} } = 1;
-	$self->_apply(26);
+	$self->_apply(32);
 } ## end sub ban_cidr
 
 =head2 unban_cidr
@@ -501,7 +486,7 @@ sub unban_cidr {
 	}
 
 	delete( $self->{banned_cidr}{ $opts{ban} } );
-	$self->_apply(27);
+	$self->_apply(33);
 } ## end sub unban_cidr
 
 =head2 list_cidr
@@ -687,9 +672,12 @@ sub flush {
 
 =head1 ERROR CODES / FLAGS
 
+Error handling is provided by L<Error::Helper>. All
+errors are considered fatal.
+
 =head2 1, notInited
 
-Backend has not been initted yet.
+The backend has not been inited yet.
 
 =head2 8, optionsNotHash
 
@@ -697,11 +685,12 @@ The item passed to new for options is not a hash.
 
 =head2 9, noBanItem
 
-No IP specified to ban.
+No IP or CIDR range specified to ban or unban.
 
 =head2 10, banItemNotIP
 
-The item to ban is not an IP.
+The item to ban is not an IP. Either wrong ref type or regexp
+test using L<Regexp::IPv4> and L<Regexp::IPv6> failed.
 
 =head2 12, backendInitError
 
@@ -729,7 +718,7 @@ Failed to teardown the backend.
 
 =head2 18, alreadyInited
 
-Backend has already been initiated.
+init called, but the backend has already been inited.
 
 =head2 24, checkFailed
 
@@ -741,11 +730,11 @@ Failed to flush the bans.
 
 =head2 30, fileNotDefined
 
-options{file} was undef or blank.
+The option file is undef or blank.
 
 =head2 31, fileWriteFailed
 
-The rendered file could not be opened for writing.
+Could not open the file for writing.
 
 =head2 32, banCidrFailed
 

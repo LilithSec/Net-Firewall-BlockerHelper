@@ -258,12 +258,7 @@ sub new {
 	return $self;
 } ## end sub new
 
-=head2 _json
-
-Internal helper. Returns a canonical JSON::PP encoder/decoder.
-
-=cut
-
+# Internal helper. Returns a canonical JSON::PP encoder/decoder.
 sub _json {
 	my ($self) = @_;
 
@@ -271,24 +266,14 @@ sub _json {
 	return JSON::PP->new->canonical->utf8;
 }
 
-=head2 _token_url
-
-Internal helper. Returns the token generation endpoint URL.
-
-=cut
-
+# Internal helper. Returns the token generation endpoint URL.
 sub _token_url {
 	my ($self) = @_;
 
 	return 'https://' . $self->{options}{host} . '/api/fmc_platform/v1/auth/generatetoken';
 }
 
-=head2 _group_url
-
-Internal helper. Returns the Network Group object URL.
-
-=cut
-
+# Internal helper. Returns the Network Group object URL.
 sub _group_url {
 	my ($self) = @_;
 
@@ -301,13 +286,8 @@ sub _group_url {
 		. $self->{options}{group_id};
 } ## end sub _group_url
 
-=head2 _render
-
-Internal helper. Renders the full Network Group object body from the current
-set of banned IPs, sorted, each as a C<Host> literal. Returns the JSON string.
-
-=cut
-
+# Internal helper. Renders the full Network Group object body from the current
+# set of banned IPs, sorted, each as a Host literal. Returns the JSON string.
 sub _render {
 	my ($self) = @_;
 
@@ -328,15 +308,10 @@ sub _render {
 	);
 } ## end sub _render
 
-=head2 _request
-
-Internal helper. Performs a HTTP request via LWP::UserAgent, sending the
-X-auth-access-token header, returning the decoded JSON body (or undef for an
-empty body) and dying with an explanation on any HTTP level failure. Never
-called in testing mode.
-
-=cut
-
+# Internal helper. Performs a HTTP request via LWP::UserAgent, sending the
+# X-auth-access-token header, returning the decoded JSON body (or undef for an
+# empty body) and dying with an explanation on any HTTP level failure. Never
+# called in testing mode.
 sub _request {
 	my ( $self, $method, $url, $body ) = @_;
 
@@ -382,14 +357,9 @@ sub _request {
 	return $decoded;
 } ## end sub _request
 
-=head2 _generate_token
-
-Internal helper. POSTs the credentials to the token generation endpoint via
-HTTP Basic auth and stores the returned X-auth-access-token header. Dies on
-failure. Never called in testing mode.
-
-=cut
-
+# Internal helper. POSTs the credentials to the token generation endpoint via
+# HTTP Basic auth and stores the returned X-auth-access-token header. Dies on
+# failure. Never called in testing mode.
 sub _generate_token {
 	my ($self) = @_;
 
@@ -600,15 +570,10 @@ sub unban {
 	}
 } ## end sub unban
 
-=head2 _valid_cidr
-
-Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
-IPv6 CIDR range, that is an address followed by C</> and a prefix length that
-is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
-IPv6). Returns false otherwise.
-
-=cut
-
+# Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
+# IPv6 CIDR range, that is an address followed by "/" and a prefix length that
+# is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
+# IPv6). Returns false otherwise.
 sub _valid_cidr {
 	my ( $self, $cidr ) = @_;
 
@@ -947,36 +912,97 @@ sub flush {
 
 =head1 ERROR CODES / FLAGS
 
-Error handling is provided by L<Error::Helper>. All errors are considered
-fatal.
+Error handling is provided by L<Error::Helper>. All
+errors are considered fatal.
 
-    1  notInited
-    6  invalidPrefixSpecified
-    7  invalidName
-    8  optionsNotHash
-    9  noBanItem
-    10 banItemNotIP
-    12 backendInitError
-    13 banFailed
-    14 unbanFailed
-    15 listFailed
-    16 reInitFailed
-    17 teardownFailed
-    18 alreadyInited
-    23 initFailed
-    24 checkFailed
-    25 flushFailed
-    26 banCidrFailed
-    27 unbanCidrFailed
-    28 cidrItemNotCidr
-    29 cidrNotSupported
-    30 listCidrFailed
-    31 userNotDefined
-    32 passwordNotDefined
-    33 groupIdNotDefined
-    34 portsNotSupported
-    35 protocolsNotSupported
-    36 hostNotDefined
+=head2 1, notInited
+
+The backend has not been inited yet.
+
+=head2 6, invalidPrefixSpecified
+
+The specified prefix did not match /^[a-zA-Z0-9]+$/.
+
+=head2 7, invalidName
+
+The name is either undef or does not match /^[a-zA-Z0-9\-]+$/.
+
+=head2 8, optionsNotHash
+
+The item passed to new for options is not a hash.
+
+=head2 9, noBanItem
+
+No IP or CIDR range specified to ban or unban.
+
+=head2 10, banItemNotIP
+
+The item to ban is not an IP. Either wrong ref type or regexp
+test using L<Regexp::IPv4> and L<Regexp::IPv6> failed.
+
+=head2 12, backendInitError
+
+Failed to init the backend.
+
+=head2 13, banFailed
+
+Failed to ban the item.
+
+=head2 14, unbanFailed
+
+Failed to unban the item.
+
+=head2 15, listFailed
+
+Failed to get a list of bans.
+
+=head2 16, reInitFailed
+
+Failed to re_init the backend.
+
+=head2 17, teardownFailed
+
+Failed to teardown the backend.
+
+=head2 18, alreadyInited
+
+init called, but the backend has already been inited.
+
+=head2 23, initFailed
+
+init failed. Generating an auth token failed.
+
+=head2 24, checkFailed
+
+The backend check raised an error.
+
+=head2 25, flushFailed
+
+Failed to flush the bans.
+
+=head2 26, portsNotSupported
+
+The cisco_fmc backend blocks whole IPs and does not support ports.
+
+=head2 27, protocolsNotSupported
+
+The cisco_fmc backend blocks whole IPs and does not support protocols.
+
+=head2 30, hostNotDefined
+
+The option host is undef or blank.
+
+=head2 31, userNotDefined
+
+The option user is undef or blank.
+
+=head2 32, passwordNotDefined
+
+The option password is undef or blank.
+
+=head2 33, groupIdNotDefined
+
+The option group_id is undef or blank.
 
 =head2 34, banCidrFailed
 
