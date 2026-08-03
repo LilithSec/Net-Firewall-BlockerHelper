@@ -114,7 +114,7 @@ And the following example/testing backends are available.
 
 # Install
 
-Rquirements...
+Requirements...
 
 - Regexp::IPv4
 - Regexp::IPv6
@@ -125,7 +125,15 @@ And if using any of the HTTP backends...
 - LWP::UserAgent
 - LWP::Protocol::https
 
-To install...
+## cpanm
+
+```shell
+cpanm Net::Firewall::BlockerHelper LWP::UserAgent LWP::Protocol::https
+```
+
+## From source
+
+Clone the repo or grab and extract the tarball, then in it...
 
 ```shell
 perl Makefile.PL
@@ -134,10 +142,24 @@ make test
 make install
 ```
 
-Or via cpanm...
+The requirements need installed first, either via packages as below or
+cpanm.
 
-```
+## FreeBSD
+
+Regexp::IPv4 is not ported, so cpanm is used for the final step.
+
+```shell
+pkg install perl5 p5-App-cpanminus p5-Error-Helper p5-Regexp-IPv6 p5-libwww p5-LWP-Protocol-https
 cpanm Net::Firewall::BlockerHelper
-# If using any of the HTTP backends...
-cpanm LWP::UserAgent LWP::Protocol::https
+```
+
+## Debian
+
+Regexp::IPv4 and Error::Helper are not packaged, so cpanm is used for the
+final step.
+
+```shell
+apt-get install perl make cpanminus libregexp-ipv6-perl libwww-perl liblwp-protocol-https-perl
+cpanm Net::Firewall::BlockerHelper
 ```
