@@ -55,6 +55,8 @@ account) with rights to update the policy.
 
 =head2 new
 
+Initiates the object.
+
     - options :: Backend specific options. See below.
     - name :: Required by Net::Firewall::BlockerHelper, otherwise unused.
 
@@ -236,7 +238,8 @@ sub _run {
 
 =head2 init
 
-Initiates the backend, verifying the rule exists.
+Initiates the backend, verifying the deny rule at the configured priority
+exists via C<gcloud compute security-policies rules describe>.
 
 =cut
 
@@ -263,6 +266,12 @@ sub init {
 } ## end sub init
 
 =head2 ban
+
+Bans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then added to the ban list. The rule's source ranges are
+then rewritten via C<gcloud compute security-policies rules update>, the IP
+included as a /32 (IPv4) or /128 (IPv6) range. Banning an already banned IP
+is a noop.
 
     $fw_helper->ban( ban => $ip );
 
@@ -320,6 +329,11 @@ sub ban {
 } ## end sub ban
 
 =head2 unban
+
+Unbans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then removed from the ban list. The rule's source ranges are
+rewritten without it via C<gcloud compute security-policies rules update>.
+Unbanning an IP that is not banned is a noop.
 
     $fw_helper->unban( ban => $ip );
 
@@ -396,7 +410,10 @@ sub _valid_cidr {
 
 =head2 ban_cidr
 
-Bans a CIDR range by adding it to the rule's source ranges.
+Bans a CIDR range. The value of ban is validated as being a IPv4 or IPv6
+CIDR range and lowercased, then added to the rule's source ranges via
+C<gcloud compute security-policies rules update>. Banning an already banned
+range is a noop.
 
     $fw_helper->ban_cidr( ban => '1.2.3.0/24' );
 
@@ -453,7 +470,9 @@ sub ban_cidr {
 
 =head2 unban_cidr
 
-Unbans a CIDR range by removing it from the rule's source ranges.
+Unbans a CIDR range. The value of ban is validated as being a IPv4 or IPv6
+CIDR range and lowercased, then the rule's source ranges are rewritten
+without it. Unbanning a range that is not banned is a noop.
 
     $fw_helper->unban_cidr( ban => '1.2.3.0/24' );
 
@@ -510,7 +529,8 @@ sub unban_cidr {
 
 =head2 list_cidr
 
-List banned CIDR ranges.
+List banned CIDR ranges. Returns an array of the currently banned CIDR
+ranges. Single IPs are not included; for those see L</list>.
 
     my @banned_cidrs = $fw_helper->list_cidr;
 
@@ -530,6 +550,9 @@ sub list_cidr {
 
 =head2 list
 
+List banned IPs. Returns an array of the currently banned single IPs. CIDR
+ranges are not included; for those see L</list_cidr>.
+
     my @banned = $fw_helper->list;
 
 =cut
@@ -548,7 +571,9 @@ sub list {
 
 =head2 re_init
 
-Re-applies the full banned set to the rule.
+Tears down and re-initiates, then re-applies the full retained banned set
+(single IPs and CIDR ranges) to the rule's source ranges with a single
+gcloud update.
 
 =cut
 
@@ -624,7 +649,8 @@ sub stop {
 
 =head2 check
 
-Verifies the rule still exists via a describe. Zero exit is healthy.
+Verifies the rule still exists via C<gcloud compute security-policies rules
+describe>. Returns a true value on a zero exit and a false value otherwise.
 
 =cut
 
@@ -646,7 +672,9 @@ sub check {
 
 =head2 flush
 
-Empties the rule's source ranges and clears the ban list.
+Removes all currently banned IPs and CIDR ranges at once by clearing the
+ban lists and rewriting the rule's source ranges empty with a single gcloud
+update.
 
 =cut
 

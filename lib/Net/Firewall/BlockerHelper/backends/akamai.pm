@@ -64,7 +64,7 @@ as well.
 
 =head2 new
 
-Initiates the the object.
+Initiates the object.
 
     - options :: Backend specific options. See below.
         - Default :: {}
@@ -431,8 +431,9 @@ sub _request {
 
 =head2 init
 
-Initiates the backend. Verifies the credentials and endpoint by fetching the
-network list.
+Initiates the backend. Verifies the credentials and endpoint by GETing the
+network list at C</network-list/v2/network-lists/$network_list_id>. Nothing
+is created remotely; the list must already exist.
 
     $backend->init;
 
@@ -467,7 +468,9 @@ sub init {
 
 =head2 ban
 
-Bans the IP by appending it to the network list.
+Bans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then appended to the network list via a POST to the list's
+C</append> endpoint. Banning an already banned IP is a noop.
 
     $backend->ban(ban => $ip);
 
@@ -533,7 +536,10 @@ sub ban {
 
 =head2 unban
 
-Unbans the IP by removing it from the network list.
+Unbans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then removed from the network list via a DELETE of its
+element at the list's C</elements> endpoint. Unbanning an IP that is not
+banned is a noop.
 
     $backend->unban(ban => $ip);
 
@@ -615,8 +621,11 @@ sub _valid_cidr {
 
 =head2 ban_cidr
 
-Bans a CIDR range by appending it to the network list. Akamai network lists
-accept a CIDR range as a list element in the same manner as a single address.
+Bans a CIDR range. The value of ban is validated as being a IPv4 or IPv6
+CIDR and lowercased, then appended to the network list via a POST to the
+list's C</append> endpoint; Akamai network lists accept a CIDR range as a
+list element in the same manner as a single address. Banning an already
+banned range is a noop.
 
     $backend->ban_cidr(ban => '1.2.3.0/24');
 
@@ -680,7 +689,10 @@ sub ban_cidr {
 
 =head2 unban_cidr
 
-Unbans a CIDR range by removing it from the network list.
+Unbans a CIDR range. The value of ban is validated as being a IPv4 or IPv6
+CIDR and lowercased, then removed from the network list via a DELETE of its
+element at the list's C</elements> endpoint. Unbanning a range that is not
+banned is a noop.
 
     $backend->unban_cidr(ban => '1.2.3.0/24');
 
@@ -742,7 +754,9 @@ sub unban_cidr {
 
 =head2 list_cidr
 
-List banned CIDR ranges.
+List banned CIDR ranges. Returns an array of the currently banned CIDR
+ranges from internal state; the network list is not fetched. Single IPs are
+not included; for those see L</list>.
 
     my @banned_cidrs = $backend->list_cidr;
 
@@ -762,7 +776,9 @@ sub list_cidr {
 
 =head2 list
 
-List banned IPs.
+List banned IPs. Returns an array of the currently banned single IPs from
+internal state; the network list is not fetched. CIDR ranges are not
+included; for those see L</list_cidr>.
 
     my @banned = $backend->list;
 
@@ -782,10 +798,9 @@ sub list {
 
 =head2 re_init
 
-Tells the backend to re-init it's self.
-
-This will call teardown and init again. After that it will
-re-added all previously added bans.
+Tears down and re-initiates the backend. teardown is called best effort,
+then init, after which every previously banned single IP and CIDR range is
+re-added to the network list via POSTs to the list's C</append> endpoint.
 
     $backend->re_init;
 
@@ -839,9 +854,10 @@ sub re_init {
 
 =head2 teardown
 
-Tears down the setup for the backend by removing each currently banned IP
-from the network list. The internal list of bans is kept, so a following
-re_init will re-add them.
+Tears down the setup for the backend by DELETEing the element for each
+currently banned single IP from the network list. Banned CIDR ranges are
+left in place. The internal list of bans is kept, so a following re_init
+will re-add them.
 
     $backend->teardown;
 
@@ -920,9 +936,9 @@ sub check {
 
 =head2 flush
 
-Removes all currently banned IPs at once by removing their elements from the
-network list and forgetting them. This is the equivalent of fail2ban's
-C<actionflush>.
+Removes all currently banned IPs and CIDR ranges at once by DELETEing their
+elements from the network list and forgetting them. This is the equivalent
+of fail2ban's C<actionflush>.
 
     $backend->flush;
 

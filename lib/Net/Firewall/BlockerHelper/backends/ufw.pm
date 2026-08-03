@@ -411,7 +411,7 @@ sub _status_command {
 =head2 init
 
 Initiates the backend. As there is no container to create, this just
-verifies that ufw is enabled.
+verifies that ufw is enabled via C<ufw status>.
 
     $backend->init;
 
@@ -452,7 +452,11 @@ sub init {
 
 =head2 ban
 
-Bans the IP.
+Bans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then one C<< ufw prepend <type> ... >> rule per protocol is
+added for it, based on the configured protocols and ports. If the C<kill>
+option is set, existing connections/state for the IP are killed via C<ss -K>
+or C<conntrack -D>. Banning an already banned IP is a noop.
 
     $backend->ban(ban => $ip);
 
@@ -535,7 +539,9 @@ sub ban {
 
 =head2 unban
 
-Unbans the IP.
+Unbans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then its rules are removed via C<< ufw delete <type> ... >>,
+one per protocol. Unbanning an IP that is not banned is a noop.
 
     $backend->unban(ban => $ip);
 
@@ -624,8 +630,10 @@ sub _valid_cidr {
 
 =head2 ban_cidr
 
-Bans a CIDR range by prepending one or more per-range rules, one per
-protocol, in the same manner as a single IP.
+Bans a CIDR range by prepending one or more per-range rules via
+C<< ufw prepend <type> ... >>, one per protocol, in the same manner as a
+single IP. The value of ban is validated as being a IPv4 or IPv6 CIDR range
+and lowercased. Banning an already banned range is a noop.
 
     $backend->ban_cidr(ban => '1.2.3.0/24');
 
@@ -694,7 +702,10 @@ sub ban_cidr {
 
 =head2 unban_cidr
 
-Unbans a CIDR range by deleting its per-range rules.
+Unbans a CIDR range by deleting its per-range rules via
+C<< ufw delete <type> ... >>. The value of ban is validated as being a IPv4
+or IPv6 CIDR range and lowercased. Unbanning a range that is not banned is
+a noop.
 
     $backend->unban_cidr(ban => '1.2.3.0/24');
 
@@ -763,7 +774,8 @@ sub unban_cidr {
 
 =head2 list_cidr
 
-List banned CIDR ranges.
+List banned CIDR ranges. Returns an array of the currently banned CIDR
+ranges. Single IPs are not included; for those see L</list>.
 
     my @banned_cidrs = $backend->list_cidr;
 
@@ -783,7 +795,8 @@ sub list_cidr {
 
 =head2 list
 
-List banned IPs.
+List banned IPs. Returns an array of the currently banned single IPs. CIDR
+ranges are not included; for those see L</list_cidr>.
 
     my @banned = $backend->list;
 

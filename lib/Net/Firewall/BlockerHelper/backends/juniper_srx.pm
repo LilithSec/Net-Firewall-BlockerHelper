@@ -376,8 +376,12 @@ sub init {
 
 =head2 ban
 
-Bans the IP by adding it to the global address book and address-set, then
-committing.
+Bans an IP. The value of ban is validated as being a IPv4 or IPv6 address and
+lowercased. A global address book entry named C<< <prefix>_<name>_<ip> >>
+(dots and colons replaced with '-') is created with a /32 or /128 mask as
+appropriate and added to the configured address-set, via a load-configuration
+RPC in set format followed by a commit-configuration RPC, both POSTed to the
+REST API. Banning an already banned IP is a noop.
 
     $backend->ban(ban => $ip);
 
@@ -450,8 +454,11 @@ sub ban {
 
 =head2 unban
 
-Unbans the IP by deleting its address book object, then committing. Deleting
-the address also removes it from the address-set.
+Unbans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased. The IP's address book object is deleted via a
+load-configuration RPC followed by a commit-configuration RPC; deleting the
+address also removes it from the address-set. Unbanning an IP that is not
+banned is a noop.
 
     $backend->unban(ban => $ip);
 
@@ -557,8 +564,11 @@ sub _ban_cidr_setlines {
 
 =head2 ban_cidr
 
-Bans a CIDR range by adding it to the global address book and address-set, then
-committing.
+Bans a CIDR range. The value of ban is validated as being a IPv4 or IPv6 CIDR
+and lowercased. An address book object is created the same way as for a single
+IP, but with the CIDR used verbatim as the address prefix, and is added to the
+address-set, then the change is committed. Banning an already banned CIDR
+range is a noop.
 
     $backend->ban_cidr(ban => '1.2.3.0/24');
 
@@ -629,8 +639,10 @@ sub ban_cidr {
 
 =head2 unban_cidr
 
-Unbans a CIDR range by deleting its address book object, then committing.
-Deleting the address also removes it from the address-set.
+Unbans a CIDR range. The value of ban is validated as being a IPv4 or IPv6
+CIDR and lowercased. The range's address book object is deleted, then the
+change is committed; deleting the address also removes it from the
+address-set. Unbanning a CIDR range that is not banned is a noop.
 
     $backend->unban_cidr(ban => '1.2.3.0/24');
 
@@ -701,7 +713,9 @@ sub unban_cidr {
 
 =head2 list_cidr
 
-List banned CIDR ranges.
+List banned CIDR ranges. Returns an array of the currently banned CIDR ranges
+from internal state; the device is not queried. Single IPs are not included;
+for those see L</list>.
 
     my @banned_cidrs = $backend->list_cidr;
 
@@ -721,7 +735,9 @@ sub list_cidr {
 
 =head2 list
 
-List banned IPs.
+List banned IPs. Returns an array of the currently banned single IPs from
+internal state; the device is not queried. CIDR ranges are not included; for
+those see L</list_cidr>.
 
     my @banned = $backend->list;
 
@@ -741,7 +757,10 @@ sub list {
 
 =head2 re_init
 
-Tears down and re-inits, then re-adds all previously added bans.
+Tears down and re-inits, then re-adds all previously added bans. Teardown is
+best effort, as a partially or fully wiped setup is what re_init recovers
+from. Each retained IP and CIDR range is then re-added via its own
+load-configuration and commit-configuration RPC pair.
 
 =cut
 
@@ -822,9 +841,9 @@ sub re_init {
 
 =head2 teardown
 
-Tears down the setup by deleting each currently banned IP's address book
-object. The internal list of bans is kept, so a following re_init will re-add
-them.
+Tears down the setup by deleting the address book object of each currently
+banned IP and CIDR range, committing after each deletion. The internal list of
+bans is kept, so a following re_init will re-add them.
 
 =cut
 
@@ -902,8 +921,9 @@ sub check {
 
 =head2 flush
 
-Removes all currently banned IPs at once by deleting their address book objects
-and forgetting them.
+Removes all currently banned IPs and CIDR ranges at once by deleting their
+address book objects, committing after each deletion, and clearing the
+internal ban lists.
 
 =cut
 

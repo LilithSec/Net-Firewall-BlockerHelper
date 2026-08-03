@@ -260,7 +260,9 @@ sub init {
 
 =head2 ban
 
-Bans the IP.
+Bans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then added to the configured npf table via
+C<npfctl table ... add>. Banning an already banned IP is a noop.
 
     $backend->ban(ban => $ip);
 
@@ -326,7 +328,9 @@ sub ban {
 
 =head2 unban
 
-Unbans the IP.
+Unbans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then removed from the configured npf table via
+C<npfctl table ... rem>. Unbanning an IP that is not banned is a noop.
 
     $backend->unban(ban => $ip);
 
@@ -392,7 +396,9 @@ sub unban {
 
 =head2 list
 
-List banned IPs.
+List banned IPs. Returns an array of the currently banned single IPs from
+the internal ban list. CIDR ranges are not included; for those see
+L</list_cidr>.
 
     my @banned = $backend->list;
 
@@ -559,7 +565,8 @@ sub unban_cidr {
 
 =head2 list_cidr
 
-List banned CIDR ranges.
+List banned CIDR ranges. Returns an array of the currently banned CIDR
+ranges from the internal ban list.
 
     my @banned_cidrs = $backend->list_cidr;
 
@@ -581,8 +588,9 @@ sub list_cidr {
 
 Tells the backend to re-init it's self.
 
-This will call teardown and init again. After that it will
-re-added all previously added bans.
+This will call teardown, which flushes the table, then init, which
+re-verifies the table is declared, and then re-add all retained bans, both
+single IPs and CIDR ranges, via C<npfctl table ... add>.
 
     $backend->re_init;
 

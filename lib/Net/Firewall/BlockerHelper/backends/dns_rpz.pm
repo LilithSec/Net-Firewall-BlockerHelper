@@ -61,6 +61,8 @@ either is an error.
 
 =head2 new
 
+Initiates the object.
+
     - options :: Backend specific options. See below.
     - name :: Required by Net::Firewall::BlockerHelper, otherwise unused.
 
@@ -328,7 +330,8 @@ sub _unban_command {
 
 =head2 init
 
-Initiates the backend. Verifies the keyfile exists.
+Initiates the backend. Nothing is created on the server; the configured
+keyfile is just verified to exist and be a file.
 
 =cut
 
@@ -356,6 +359,10 @@ sub init {
 } ## end sub init
 
 =head2 ban
+
+Bans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then a C<CNAME .> record is added at the RPZ owner name for
+the IP by running nsupdate. Banning an already banned IP is a noop.
 
     $fw_helper->ban( ban => $ip );
 
@@ -420,6 +427,11 @@ sub ban {
 
 =head2 unban
 
+Unbans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then the C<CNAME .> record at the RPZ owner name for the IP
+is deleted by running nsupdate. Unbanning an IP that is not banned is a
+noop.
+
     $fw_helper->unban( ban => $ip );
 
 =cut
@@ -482,6 +494,8 @@ sub unban {
 } ## end sub unban
 
 =head2 list
+
+List banned IPs. Returns an array of the currently banned IPs.
 
     my @banned = $fw_helper->list;
 
@@ -578,7 +592,9 @@ sub list_cidr {
 
 =head2 re_init
 
-Re-adds every retained RPZ record.
+Tears down and re-initiates. teardown is called best effort, init is run
+again, and then the RPZ record for every retained banned IP is re-added
+via nsupdate.
 
 =cut
 
@@ -672,7 +688,8 @@ sub stop {
 
 =head2 check
 
-Verifies the keyfile still exists. Zero is healthy.
+Verifies the keyfile still exists and is a file. Returns a true value if so
+and a false value otherwise.
 
 =cut
 
@@ -691,7 +708,8 @@ sub check {
 
 =head2 flush
 
-Removes every RPZ record and clears the ban list.
+Removes all currently banned IPs at once by running a nsupdate delete for
+each RPZ record and clearing the ban list.
 
 =cut
 

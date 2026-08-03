@@ -269,6 +269,11 @@ sub init {
 
 =head2 ban
 
+Bans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then added to the ban list. The file is re-rendered and the
+reload command, if one is configured, is run. Banning an already banned IP
+is a noop.
+
     $fw_helper->ban( ban => $ip );
 
 =cut
@@ -319,6 +324,11 @@ sub ban {
 } ## end sub ban
 
 =head2 unban
+
+Unbans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then removed from the ban list. The file is re-rendered
+without it and the reload command, if one is configured, is run. Unbanning
+an IP that is not banned is a noop.
 
     $fw_helper->unban( ban => $ip );
 
@@ -510,6 +520,9 @@ sub list_cidr {
 }
 
 =head2 list
+
+List banned IPs. Returns an array of the currently banned single IPs. CIDR
+ranges are not included; for those see L</list_cidr>.
 
     my @banned = $fw_helper->list;
 

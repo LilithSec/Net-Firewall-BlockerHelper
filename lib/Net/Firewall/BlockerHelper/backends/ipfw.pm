@@ -81,7 +81,7 @@ our $VERSION = '0.1.0';
 
 =head2 new
 
-Initiates the the object.
+Initiates the object. Takes the arguments below.
 
     - options :: Backend specific options that will be passed to the backend unchecked
             outside of making sure it is a hash ref if defined. See below for furhter info.
@@ -455,12 +455,18 @@ sub new {
 
 =head2 init
 
-Initiates the backend. This will attempt to drop the rule number and table
-prior to re-adding them.
+Initiates the backend. First any old remnants are removed on a best effort
+basis, destroying the table C<E<lt>prefixE<gt>_E<lt>nameE<gt>> and deleting
+the configured rule number, with failures ignored. The table is then created
+via C<ipfw table ... create> and a block rule is added at the configured rule
+number for each configured protocol, matching from C<table(...)> to C<me> or
+C<me6> depending on the family, with the configured ports appended for
+port-capable protocols (tcp/udp/sctp). The action is C<deny> or, for reject
+types, C<unreach>/C<unreach6> per the family of the rule.
 
 No arguments are taken.
 
-May called a second time, it will error.
+If called a second time, it will error.
 
     $backend->init;
 
@@ -584,7 +590,12 @@ sub init {
 
 =head2 ban
 
-Bans the IP.
+Bans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then added to the IPFW table via
+C<ipfw table E<lt>prefixE<gt>_E<lt>nameE<gt> add>. If the kill option is set
+and tcp is among the blocked protocols, established TCP connections from the
+IP are found via sockstat and killed via tcpdrop. Banning an already banned
+IP is a noop.
 
     $backend->ban(ban => $ip);
 
@@ -680,9 +691,12 @@ sub ban {
 
 =head2 unban
 
-Unbans the an IP.
+Unbans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then removed from the IPFW table via
+C<ipfw table E<lt>prefixE<gt>_E<lt>nameE<gt> delete>. Unbanning an IP that
+is not banned is a noop.
 
-    $backend->ban(ban => $ip);
+    $backend->unban(ban => $ip);
 
 =cut
 
@@ -913,7 +927,8 @@ sub list_cidr {
 
 =head2 list
 
-List banned IPs.
+List banned IPs. Returns an array of the currently banned single IPs. CIDR
+ranges are not included; for those see L</list_cidr>.
 
     my @banned = $backend->list;
 
@@ -933,10 +948,12 @@ sub list {
 
 =head2 re_init
 
-Tells the backend to re-init it's self.
+Tells the backend to re-init itself.
 
-This will call teardown and init again. After that it will
-re-added all previously added bans.
+Calls teardown, with errors ignored as a partially wiped setup is what
+re_init recovers from, then init to recreate the table and rules. All
+previously banned IPs and CIDR ranges are then re-added to the table via
+C<ipfw table ... add>.
 
     $backend->re_init;
 
@@ -990,12 +1007,11 @@ sub re_init {
 
 =head2 teardown
 
-Tears down the setup for the backend.
+Tears down the setup for the backend, destroying the table
+C<E<lt>prefixE<gt>_E<lt>nameE<gt>> and deleting the configured rule number.
 
-This will delete the table as well as the firewall rule.
-
-If called prior to calling init, this will error. It won't check if it has been
-inited or not.
+It does not check if it has been inited or not, so if called prior to
+calling init, it will error as the commands will fail.
 
     $backend->teardown;
 
@@ -1082,9 +1098,9 @@ sub check {
 
 =head2 flush
 
-Removes all currently banned IPs at once by flushing the IPFW table, leaving
-the table and rule in place. This is the equivalent of fail2ban's
-C<actionflush>.
+Removes all currently banned IPs and CIDR ranges at once by flushing the
+IPFW table, leaving the table and rule in place. This is the equivalent of
+fail2ban's C<actionflush>.
 
     $backend->flush;
 

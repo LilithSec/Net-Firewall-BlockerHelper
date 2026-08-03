@@ -369,7 +369,10 @@ sub init {
 
 =head2 ban
 
-Bans the IP by creating an ACL entry for it.
+Bans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then an ACL entry is created for it via a POST, with a /32
+subnet for IPv4 and a /128 subnet for IPv6. Banning an already banned IP is
+a noop.
 
     $backend->ban(ban => $ip);
 
@@ -464,7 +467,10 @@ sub _unban_ip {
 
 =head2 unban
 
-Unbans the IP by finding and deleting its ACL entry.
+Unbans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then the ACL entries are fetched, the entry for the IP is
+found, and it is deleted by its ID. An entry that can not be found is
+treated as already unbanned. Unbanning an IP that is not banned is a noop.
 
     $backend->unban(ban => $ip);
 
@@ -531,7 +537,8 @@ sub unban {
 
 =head2 list
 
-List banned IPs.
+List banned IPs. Returns an array of the currently banned single IPs. CIDR
+ranges are not included; for those see L</list_cidr>.
 
     my @banned = $backend->list;
 
@@ -571,7 +578,9 @@ sub _valid_cidr {
 
 Bans a CIDR range by creating an ACL entry for it. The range is split into its
 address and prefix length, sent as the ACL entry's ip and subnet, mirroring how
-a single IP is banned as a /32 or /128 entry.
+a single IP is banned as a /32 or /128 entry. The value of ban is validated
+as being a IPv4 or IPv6 CIDR range and lowercased. Banning an already
+banned range is a noop.
 
     $backend->ban_cidr(ban => '1.2.3.0/24');
 
@@ -674,7 +683,11 @@ sub _unban_cidr_range {
 
 =head2 unban_cidr
 
-Unbans a CIDR range by finding and deleting its ACL entry.
+Unbans a CIDR range. The value of ban is validated as being a IPv4 or IPv6
+CIDR range and lowercased, then the ACL entries are fetched, the entry
+matching its address and prefix length is found, and it is deleted by its
+ID. An entry that can not be found is treated as already unbanned.
+Unbanning a range that is not banned is a noop.
 
     $backend->unban_cidr(ban => '1.2.3.0/24');
 
@@ -739,7 +752,8 @@ sub unban_cidr {
 
 =head2 list_cidr
 
-List banned CIDR ranges.
+List banned CIDR ranges. Returns an array of the currently banned CIDR
+ranges. Single IPs are not included; for those see L</list>.
 
     my @banned_cidrs = $backend->list_cidr;
 
@@ -761,8 +775,9 @@ sub list_cidr {
 
 Tells the backend to re-init it's self.
 
-This will call teardown and init again. After that it will
-re-added all previously added bans.
+This will call teardown and init again. After that it will re-add all
+previously added bans, POSTing an ACL entry for each retained IP and CIDR
+range.
 
     $backend->re_init;
 

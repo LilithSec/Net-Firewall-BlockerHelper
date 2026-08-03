@@ -63,6 +63,8 @@ Requires C<exabgpcli> in the C<PATH> and a running, configured C<exabgp>.
 
 =head2 new
 
+Initiates the object. Errors are fatal with this method.
+
     - options :: A hash of options. See below.
     - name :: Required by Net::Firewall::BlockerHelper, otherwise unused.
 
@@ -397,8 +399,9 @@ sub _check_command {
 
 =head2 init
 
-Initiates the backend. The BGP session is owned by the running exabgp, so
-there is nothing to set up; this only flips the inited flag.
+Initiates the backend. The BGP session is owned by the running BGP daemon
+(exabgp, gobgpd, or FRR), so there is nothing to set up; this only flips the
+inited flag.
 
 =cut
 
@@ -422,7 +425,13 @@ sub init {
 
 =head2 ban
 
-Announces a blackhole route for the IP.
+Bans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then announced via the configured driver: a
+C<exabgpcli announce route> or C<gobgp global rib add> of the host route
+(C<mask4>/C<mask6> prefix length) with the family-appropriate next hop and
+the blackhole community, a FlowSpec discard rule when announce_type is
+C<flowspec>, or a C<vtysh> injected blackhole static route for the frr
+driver. Banning an already banned IP is a noop.
 
     $fw_helper->ban( ban => $ip );
 
@@ -488,7 +497,11 @@ sub ban {
 
 =head2 unban
 
-Withdraws the blackhole route for the IP.
+Unbans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then the route announced for it by L</ban> is withdrawn via
+the configured driver (C<exabgpcli withdraw>, C<gobgp global rib del>, or a
+C<vtysh> C<no ... blackhole> for frr). Unbanning an IP that is not banned is
+a noop.
 
     $fw_helper->unban( ban => $ip );
 
@@ -572,8 +585,11 @@ sub _valid_cidr {
 
 =head2 ban_cidr
 
-Announces a blackhole route for a CIDR range. The range is announced verbatim
-rather than as a host route.
+Bans a CIDR range. The value of ban is validated as being a IPv4 or IPv6
+CIDR range and lowercased, then announced the same way L</ban> announces a
+single IP, except the range is announced verbatim rather than having the
+C<mask4>/C<mask6> host prefix length appended. Banning an already banned
+range is a noop.
 
     $fw_helper->ban_cidr( ban => '1.2.3.0/24' );
 
@@ -637,7 +653,10 @@ sub ban_cidr {
 
 =head2 unban_cidr
 
-Withdraws the blackhole route for a CIDR range.
+Unbans a CIDR range. The value of ban is validated as being a IPv4 or IPv6
+CIDR range and lowercased, then the route announced for it by L</ban_cidr>
+is withdrawn via the configured driver. Unbanning a range that is not banned
+is a noop.
 
     $fw_helper->unban_cidr( ban => '1.2.3.0/24' );
 
@@ -701,7 +720,8 @@ sub unban_cidr {
 
 =head2 list_cidr
 
-List banned CIDR ranges.
+List banned CIDR ranges. Returns an array of the currently banned ranges
+from internal state; the BGP daemon is not queried.
 
     my @banned_cidrs = $fw_helper->list_cidr;
 
@@ -721,7 +741,9 @@ sub list_cidr {
 
 =head2 list
 
-List banned IPs.
+List banned IPs. Returns an array of the currently banned single IPs from
+internal state; the BGP daemon is not queried. CIDR ranges are not included;
+for those see L</list_cidr>.
 
     my @banned = $fw_helper->list;
 
@@ -741,9 +763,11 @@ sub list {
 
 =head2 re_init
 
-Re-announces every retained blackhole route. exabgp does not persist state
-across restarts, so this is how the announcements are restored after the
-daemon is bounced.
+Re-announces every retained blackhole route. A best effort teardown
+(failures ignored) is done first, then the announce command is re-run for
+every banned IP and CIDR range. The BGP daemons do not persist announced
+state across restarts, so this is how the announcements are restored after
+the daemon is bounced.
 
 =cut
 
@@ -807,7 +831,10 @@ sub re_init {
 
 =head2 teardown
 
-Withdraws every announced blackhole route.
+Withdraws every announced blackhole route, running the driver's withdraw
+command for each banned IP and CIDR range, and marks the backend as not
+inited. The ban list is retained, so L</re_init> can restore the
+announcements.
 
 =cut
 
@@ -856,7 +883,8 @@ sub stop {
 =head2 check
 
 Runs the driver's neighbor summary command (C<exabgpcli show neighbor
-summary> or C<gobgp neighbor>) and treats a zero exit as healthy. This
+summary>, C<gobgp neighbor>, or C<vtysh -c 'show ip bgp summary'> for frr)
+and treats a zero exit as healthy, returning 1, and 0 otherwise. This
 confirms the BGP daemon is reachable so the announcements are live.
 
 =cut
@@ -879,7 +907,8 @@ sub check {
 
 =head2 flush
 
-Withdraws all announced routes at once and clears the ban list.
+Removes all bans at once by running the driver's withdraw command for every
+banned IP and CIDR range, then clearing the ban lists.
 
 =cut
 

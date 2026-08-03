@@ -274,7 +274,9 @@ sub new {
 
 =head2 init
 
-Initiates the backend.
+Initiates the backend. As this is the dummy testing backend, nothing
+external is touched; the backend is just marked as inited and the call is
+recorded when in testing mode.
 
 No arguments are taken.
 
@@ -302,7 +304,9 @@ sub init {
 
 =head2 ban
 
-Bans the IP.
+Bans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then recorded in the internal ban list. As this is the
+dummy testing backend, nothing external is touched.
 
     $backend->ban(ban => $ip);
 
@@ -351,9 +355,11 @@ sub ban {
 
 =head2 unban
 
-Unbans the an IP.
+Unbans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then removed from the internal ban list. As this is the
+dummy testing backend, nothing external is touched.
 
-    $backend->ban(ban => $ip);
+    $backend->unban(ban => $ip);
 
 =cut
 
@@ -418,7 +424,9 @@ sub _valid_cidr {
 
 =head2 ban_cidr
 
-Bans a CIDR range.
+Bans a CIDR range. The value of ban is validated as being a IPv4 or IPv6
+CIDR range and lowercased, then recorded in the internal CIDR ban list.
+Nothing external is touched.
 
     $backend->ban_cidr(ban => '1.2.3.0/24');
 
@@ -465,7 +473,9 @@ sub ban_cidr {
 
 =head2 unban_cidr
 
-Unbans a CIDR range.
+Unbans a CIDR range. The value of ban is validated as being a IPv4 or IPv6
+CIDR range and lowercased, then removed from the internal CIDR ban list.
+Nothing external is touched.
 
     $backend->unban_cidr(ban => '1.2.3.0/24');
 
@@ -512,7 +522,8 @@ sub unban_cidr {
 
 =head2 list_cidr
 
-List banned CIDR ranges.
+List banned CIDR ranges. Returns an array of the currently banned CIDR
+ranges. Single IPs are not included; for those see L</list>.
 
     my @banned_cidrs = $backend->list_cidr;
 
@@ -532,7 +543,8 @@ sub list_cidr {
 
 =head2 list
 
-List banned IPs.
+List banned IPs. Returns an array of the currently banned single IPs. CIDR
+ranges are not included; for those see L</list_cidr>.
 
     my @banned = $backend->list;
 
@@ -552,7 +564,9 @@ sub list {
 
 =head2 re_init
 
-Tells the backend to re-init it's self.
+Tells the backend to re-init it's self. As this is the dummy testing
+backend, this just marks it as inited again; the internal ban lists are
+retained.
 
 =cut
 
@@ -570,7 +584,9 @@ sub re_init {
 
 =head2 teardown
 
-Tears down the setup for the backend.
+Tears down the setup for the backend. As this is the dummy testing backend,
+there is nothing external to remove; the backend is just marked as not
+inited. The internal ban lists are kept.
 
     $backend->teardown;
 
@@ -626,8 +642,8 @@ sub check {
 
 =head2 flush
 
-Dummy flush. Clears the internal list of bans. This is the equivalent of
-fail2ban's C<actionflush>.
+Dummy flush. Clears the internal lists of banned IPs and CIDR ranges. This
+is the equivalent of fail2ban's C<actionflush>.
 
     $backend->flush;
 

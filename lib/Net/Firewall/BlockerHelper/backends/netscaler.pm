@@ -346,7 +346,9 @@ sub _request {
 
 =head2 init
 
-Initiates the backend. Verifies the NITRO API is reachable and auth works.
+Initiates the backend. Verifies the NITRO API is reachable and auth works
+via a GET of C</nitro/v1/config>. Nothing is created on the NetScaler; the
+dataset is expected to already exist.
 
     $backend->init;
 
@@ -381,7 +383,10 @@ sub init {
 
 =head2 ban
 
-Bans the IP by binding it into the policy dataset.
+Bans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then bound into the policy dataset via a PUT to
+C</nitro/v1/config/policydataset_value_binding>. Banning an already banned
+IP is a noop.
 
     $backend->ban(ban => $ip);
 
@@ -465,7 +470,10 @@ sub _unban_url {
 
 =head2 unban
 
-Unbans the IP by removing its binding from the policy dataset.
+Unbans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then its binding is removed from the policy dataset via a
+DELETE of C</nitro/v1/config/policydataset_value_binding/E<lt>datasetE<gt>?args=value:E<lt>ipE<gt>>.
+Unbanning an IP that is not banned is a noop.
 
     $backend->unban(ban => $ip);
 
@@ -590,7 +598,8 @@ sub list_cidr {
 
 =head2 list
 
-List banned IPs.
+List banned IPs. Returns an array of the currently banned IPs from the
+internal ban list; the NetScaler is not queried.
 
     my @banned = $backend->list;
 
@@ -612,8 +621,9 @@ sub list {
 
 Tells the backend to re-init it's self.
 
-This will call teardown and init again. After that it will
-re-added all previously added bans.
+This will call teardown, best effort as a partially wiped setup is what it
+is recovering from, then init again. After that every IP in the retained
+ban list is re-banned by PUTing its dataset binding back.
 
     $backend->re_init;
 

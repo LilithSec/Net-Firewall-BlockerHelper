@@ -324,8 +324,12 @@ sub new {
 
 =head2 init
 
-Initiates the backend. This will attempt to drop the rule number and table
-prior to re-adding them.
+Initiates the backend. Best effort cleanup commands are run first, flushing
+and killing the table and flushing the anchor rules, so remnants of a
+previous run do not linger. Then the table C<< <prefix>_<name> >> is
+created (persist, with counters) and C<block drop quick> rules for the
+configured protocols and ports are loaded into the anchor
+C<< <prefix>/<name> >> via C<pfctl -f->.
 
 No arguments are taken.
 
@@ -423,7 +427,11 @@ sub init {
 
 =head2 ban
 
-Bans the IP.
+Bans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then added to the pf table via
+C<< pfctl -a <prefix>/<name> -t <prefix>_<name> -T add >>. If the option
+C<kill> is true, states for the IP are killed as well, scoped to the
+configured protocols and ports. Banning an already banned IP is a noop.
 
     $backend->ban(ban => $ip);
 
@@ -559,9 +567,12 @@ sub ban {
 
 =head2 unban
 
-Unbans the an IP.
+Unbans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then removed from the pf table via
+C<< pfctl -a <prefix>/<name> -t <prefix>_<name> -T delete >>. Unbanning an
+IP that is not banned is a noop.
 
-    $backend->ban(ban => $ip);
+    $backend->unban(ban => $ip);
 
 =cut
 
@@ -650,8 +661,10 @@ sub _valid_cidr {
 
 =head2 ban_cidr
 
-Bans a CIDR range by adding it to the pf table. pf tables accept a network
-prefix in the same manner as a single address.
+Bans a CIDR range by adding it to the pf table via C<pfctl -T add>. pf
+tables accept a network prefix in the same manner as a single address. The
+value of ban is validated as being a IPv4 or IPv6 CIDR range and
+lowercased. Banning an already banned range is a noop.
 
     $backend->ban_cidr(ban => '1.2.3.0/24');
 
@@ -721,7 +734,9 @@ sub ban_cidr {
 
 =head2 unban_cidr
 
-Unbans a CIDR range by deleting it from the pf table.
+Unbans a CIDR range by deleting it from the pf table via
+C<pfctl -T delete>. The value of ban is validated as being a IPv4 or IPv6
+CIDR range and lowercased. Unbanning a range that is not banned is a noop.
 
     $backend->unban_cidr(ban => '1.2.3.0/24');
 
@@ -792,7 +807,8 @@ sub unban_cidr {
 
 =head2 list_cidr
 
-List banned CIDR ranges.
+List banned CIDR ranges. Returns an array of the currently banned CIDR
+ranges. Single IPs are not included; for those see L</list>.
 
     my @banned_cidrs = $backend->list_cidr;
 
@@ -812,7 +828,8 @@ sub list_cidr {
 
 =head2 list
 
-List banned IPs.
+List banned IPs. Returns an array of the currently banned single IPs. CIDR
+ranges are not included; for those see L</list_cidr>.
 
     my @banned = $backend->list;
 
@@ -901,7 +918,8 @@ sub re_init {
 
 Tears down the setup for the backend.
 
-This will delete the table as well as the firewall rule.
+This flushes and kills the pf table and flushes the rules from the anchor,
+removing both the table and the block rules.
 
 If called prior to calling init, this will error. It won't check if it has been
 inited or not.

@@ -55,6 +55,8 @@ rule.
 
 =head2 new
 
+Initiates the backend object. Nothing is contacted at this point; that is done by L</init>.
+
     - options :: Backend specific options. See below.
     - name :: Required by Net::Firewall::BlockerHelper, otherwise unused.
 
@@ -259,7 +261,9 @@ sub _run {
 
 =head2 init
 
-Initiates the backend, verifying the rule exists.
+Initiates the backend, verifying the configured security rule exists via
+C<az network nsg rule show>. Nothing is created; the NSG and rule must
+already exist.
 
 =cut
 
@@ -286,6 +290,12 @@ sub init {
 } ## end sub init
 
 =head2 ban
+
+Bans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then added to the ban list. The full set of banned IPs
+(rendered as /32 or /128 prefixes) and CIDR ranges is then pushed to the
+rule via C<az network nsg rule update --source-address-prefixes>. Banning
+an already banned IP is a noop.
 
     $fw_helper->ban( ban => $ip );
 
@@ -343,6 +353,11 @@ sub ban {
 } ## end sub ban
 
 =head2 unban
+
+Unbans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then removed from the ban list. The rule's source prefixes
+are re-rendered without it via C<az network nsg rule update>. Unbanning an
+IP that is not banned is a noop.
 
     $fw_helper->unban( ban => $ip );
 
@@ -419,7 +434,9 @@ sub _valid_cidr {
 
 =head2 ban_cidr
 
-Bans a CIDR range by adding it to the rule's source prefixes.
+Bans a CIDR range. The value of ban is validated as being a IPv4 or IPv6
+CIDR and lowercased, then added verbatim to the rule's source prefixes via
+C<az network nsg rule update>. Banning an already banned range is a noop.
 
     $fw_helper->ban_cidr( ban => '1.2.3.0/24' );
 
@@ -476,7 +493,10 @@ sub ban_cidr {
 
 =head2 unban_cidr
 
-Unbans a CIDR range by removing it from the rule's source prefixes.
+Unbans a CIDR range. The value of ban is validated as being a IPv4 or IPv6
+CIDR and lowercased, then the rule's source prefixes are re-rendered
+without it via C<az network nsg rule update>. Unbanning a range that is not
+banned is a noop.
 
     $fw_helper->unban_cidr( ban => '1.2.3.0/24' );
 
@@ -553,6 +573,10 @@ sub list_cidr {
 
 =head2 list
 
+List banned IPs. Returns an array of the currently banned single IPs from
+the in-memory ban list; the rule is not queried. CIDR ranges are not
+included; for those see L</list_cidr>.
+
     my @banned = $fw_helper->list;
 
 =cut
@@ -571,7 +595,9 @@ sub list {
 
 =head2 re_init
 
-Re-applies the full banned set to the rule.
+Tears down (errors ignored) and re-initiates the backend, then re-applies
+the full retained set of banned IPs and CIDR ranges to the rule via
+C<az network nsg rule update>.
 
 =cut
 
@@ -648,7 +674,8 @@ sub stop {
 
 =head2 check
 
-Verifies the rule still exists via a show. Zero exit is healthy.
+Verifies the rule still exists by running C<az network nsg rule show>.
+Returns 1 if the command exits zero and 0 otherwise.
 
 =cut
 
@@ -670,7 +697,9 @@ sub check {
 
 =head2 flush
 
-Empties the rule's source prefixes and clears the ban list.
+Removes all bans at once by clearing both the single IP and CIDR ban lists
+and re-rendering the rule's now empty source prefixes via
+C<az network nsg rule update>.
 
 =cut
 

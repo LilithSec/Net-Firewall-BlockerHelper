@@ -353,7 +353,9 @@ sub _unban_requests {
 
 =head2 init
 
-Initiates the backend. Logs into the web_api and stores the returned session id.
+Initiates the backend. Logs into the web_api by POSTing the configured user and
+password to C<< /web_api/login >> and stores the returned session id, which is
+sent in the C<X-chkp-sid> header on every following call.
 
 =cut
 
@@ -400,7 +402,11 @@ sub init {
 
 =head2 ban
 
-Bans the IP by creating a host object, adding it to the group, and publishing.
+Bans an IP. The value of ban is validated as being a IPv4 or IPv6 address and
+lowercased. A host object named C<< <prefix>_<name>_<ip> >> (dots and colons
+replaced with C<->) is created via C<< /web_api/add-host >> with the group as a
+member group, then the change is saved via C<< /web_api/publish >>. Banning an
+already banned IP is a noop.
 
     $backend->ban(ban => $ip);
 
@@ -471,7 +477,10 @@ sub ban {
 
 =head2 unban
 
-Unbans the IP by deleting its host object and publishing.
+Unbans an IP. The value of ban is validated as being a IPv4 or IPv6 address and
+lowercased. The host object created by L</ban> is deleted via
+C<< /web_api/delete-host >>, then the change is saved via
+C<< /web_api/publish >>. Unbanning an IP that is not banned is a noop.
 
     $backend->unban(ban => $ip);
 
@@ -560,8 +569,11 @@ sub _valid_cidr {
 
 =head2 ban_cidr
 
-Bans a CIDR range by creating a host object for it, adding it to the group, and
-publishing.
+Bans a CIDR range. The value of ban is validated as being a IPv4 or IPv6 CIDR
+range and lowercased, then handled the same way as L</ban>, a host object with
+the CIDR as its ip-address being created via C<< /web_api/add-host >> with the
+group as a member group and the change saved via C<< /web_api/publish >>.
+Banning an already banned CIDR range is a noop.
 
     $backend->ban_cidr(ban => '1.2.3.0/24');
 
@@ -630,7 +642,10 @@ sub ban_cidr {
 
 =head2 unban_cidr
 
-Unbans a CIDR range by deleting its host object and publishing.
+Unbans a CIDR range. The value of ban is validated as being a IPv4 or IPv6 CIDR
+range and lowercased. The host object created by L</ban_cidr> is deleted via
+C<< /web_api/delete-host >>, then the change is saved via
+C<< /web_api/publish >>. Unbanning a CIDR range that is not banned is a noop.
 
     $backend->unban_cidr(ban => '1.2.3.0/24');
 
@@ -699,7 +714,9 @@ sub unban_cidr {
 
 =head2 list_cidr
 
-List banned CIDR ranges.
+List banned CIDR ranges. Returns an array of the currently banned CIDR ranges
+from internal state; nothing is queried from the management server. Single IPs
+are not included; for those see L</list>.
 
     my @banned_cidrs = $backend->list_cidr;
 
@@ -719,7 +736,9 @@ sub list_cidr {
 
 =head2 list
 
-List banned IPs.
+List banned IPs. Returns an array of the currently banned single IPs from
+internal state; nothing is queried from the management server. CIDR ranges are
+not included; for those see L</list_cidr>.
 
     my @banned = $backend->list;
 
@@ -739,7 +758,9 @@ sub list {
 
 =head2 re_init
 
-Tears down and re-inits, then re-adds all previously added bans.
+Tears down and re-inits. L</teardown> is called best effort, a new session is
+logged in via L</init>, and then the host object and group membership is
+re-created for every retained single IP and CIDR ban.
 
 =cut
 
@@ -797,8 +818,8 @@ sub re_init {
 =head2 teardown
 
 Tears down the setup by deleting the host object for each currently banned IP
-and publishing. The internal list of bans is kept, so a following re_init will
-re-add them.
+and CIDR range and publishing. The internal list of bans is kept, so a
+following re_init will re-add them.
 
 =cut
 
@@ -875,8 +896,8 @@ sub check {
 
 =head2 flush
 
-Removes all currently banned IPs at once by deleting their host objects and
-publishing, then forgetting them.
+Removes all currently banned IPs and CIDR ranges at once by deleting their
+host objects and publishing, then forgetting them.
 
 =cut
 

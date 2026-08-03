@@ -656,12 +656,20 @@ sub _kill_commands {
 
 =head2 init
 
-Initiates the backend. This will attempt to drop the chain and ipsets
-prior to re-adding them.
+Initiates the backend. Creates the two ipsets, C<< <prefix>_<name>_4 >>
+(hash:ip family inet) and C<< <prefix>_<name>_6 >> (hash:ip family inet6),
+creates the C<< <prefix>_<name> >> chain via C<iptables -N> and
+C<ip6tables -N>, populates it with the block rules built from the configured
+type, protocols, and ports, and appends a jump to it from C<INPUT>. For the
+tarpit and delude types a same-named chain holding the C<-j CT --notrack>
+rules is also created in the C<raw> table and jumped to from C<PREROUTING>.
+
+Before any of that, matching stale chains and ipsets from a previous run are
+removed; those cleanup commands are allowed to fail.
 
 No arguments are taken.
 
-May called a second time, it will error.
+If called a second time without an intervening teardown, it will error.
 
     $backend->init;
 
@@ -743,7 +751,14 @@ sub init {
 
 =head2 ban
 
-Bans the IP.
+Bans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then added to the instance's IPv4 or IPv6 ipset, as
+appropriate for its family, via C<ipset add>. Banning an already banned IP
+is a noop.
+
+If the C<kill> option is set, L<conntrack(8)> is then used to drop existing
+connection tracking entries for the IP; its exit code is ignored, as it is
+non-zero when there is nothing to delete.
 
     $backend->ban(ban => $ip);
 
@@ -824,7 +839,10 @@ sub ban {
 
 =head2 unban
 
-Unbans the an IP.
+Unbans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then removed from the instance's IPv4 or IPv6 ipset, as
+appropriate for its family, via C<ipset del>. Unbanning an IP that is not
+banned is a noop.
 
     $backend->unban(ban => $ip);
 
@@ -893,7 +911,8 @@ sub unban {
 
 =head2 list
 
-List banned IPs.
+List banned IPs. Returns an array of the currently banned IPs from the
+retained ban state; the ipsets themselves are not queried.
 
     my @banned = $backend->list;
 
@@ -915,8 +934,10 @@ sub list {
 
 Tells the backend to re-init it's self.
 
-This will call teardown and init again. After that it will
-re-added all previously added bans.
+Calls teardown, with any errors from it ignored as a partially wiped setup
+is exactly what re_init exists to recover from, then init, recreating the
+ipsets, chain, and rules. Each previously banned IP is then re-added to the
+relevant ipset via C<ipset add>.
 
     $backend->re_init;
 
@@ -975,10 +996,14 @@ sub re_init {
 
 Tears down the setup for the backend.
 
-This will remove the chain, the jump from INPUT, and the ipsets.
+Removes the jump from C<INPUT>, flushes and deletes the chain, and destroys
+both ipsets, via C<iptables>, C<ip6tables>, and C<ipset destroy>. For the
+tarpit and delude types the raw table chain and its C<PREROUTING> jump are
+removed as well, before the ipsets its rules reference are destroyed. The
+retained ban state is kept, so a later init/re_init can restore the bans.
 
-If called prior to calling init, this will error. It won't check if it has been
-inited or not.
+It does not check if the backend has been inited, so if called prior to
+init the removal commands will fail and it will error.
 
     $backend->teardown;
 

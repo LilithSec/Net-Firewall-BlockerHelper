@@ -246,9 +246,14 @@ sub new {
 
 =head2 init
 
-Initiates the backend.
+Initiates the backend by running the configured C<init> command with
+'2>&1' appended. A non-zero exit is an error.
 
 No arguments are taken.
+
+If called a second time, it will error.
+
+    $fw_helper->init;
 
 =cut
 
@@ -281,7 +286,9 @@ sub init {
 
 =head2 ban
 
-Bans the IP.
+Bans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then the configured C<ban> command is run with %%%BAN%%%
+replaced by the IP. A non-zero exit is an error.
 
     $fw_helper->ban(ban => $ip);
 
@@ -340,9 +347,11 @@ sub ban {
 
 =head2 unban
 
-Unbans the an IP.
+Unbans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then the configured C<unban> command is run with %%%BAN%%%
+replaced by the IP. A non-zero exit is an error.
 
-    $fw_helper->ban(ban => $ip);
+    $fw_helper->unban(ban => $ip);
 
 =cut
 
@@ -417,7 +426,9 @@ sub _valid_cidr {
 
 =head2 ban_cidr
 
-Bans the CIDR range. %%%BAN%%% in the ban command is replaced with the CIDR.
+Bans a CIDR range. The value of ban is validated as being a IPv4 or IPv6
+CIDR range and lowercased, then the configured C<ban> command is run with
+%%%BAN%%% replaced by the CIDR.
 
     $fw_helper->ban_cidr(ban => '1.2.3.0/24');
 
@@ -474,7 +485,9 @@ sub ban_cidr {
 
 =head2 unban_cidr
 
-Unbans the CIDR range. %%%BAN%%% in the unban command is replaced with the CIDR.
+Unbans a CIDR range. The value of ban is validated as being a IPv4 or IPv6
+CIDR range and lowercased, then the configured C<unban> command is run with
+%%%BAN%%% replaced by the CIDR.
 
     $fw_helper->unban_cidr(ban => '1.2.3.0/24');
 
@@ -531,7 +544,8 @@ sub unban_cidr {
 
 =head2 list_cidr
 
-List banned CIDR ranges.
+List banned CIDR ranges. Returns an array of the currently banned CIDR
+ranges. Single IPs are not included; for those see L</list>.
 
     my @banned_cidrs = $fw_helper->list_cidr;
 
@@ -551,7 +565,8 @@ sub list_cidr {
 
 =head2 list
 
-List banned IPs.
+List banned IPs. Returns an array of the currently banned single IPs. CIDR
+ranges are not included; for those see L</list_cidr>.
 
     my @banned = $fw_helper->list;
 
@@ -572,6 +587,13 @@ sub list {
 =head2 re_init
 
 Tells the backend to re-init it's self.
+
+This will call teardown and init again, re-running the configured
+C<teardown> and C<init> commands. teardown is best effort. After that the
+configured C<ban> command is re-run for every previously banned IP and CIDR
+range.
+
+    $fw_helper->re_init;
 
 =cut
 
@@ -621,7 +643,10 @@ sub re_init {
 
 =head2 teardown
 
-Tears down the setup for the backend.
+Tears down the setup for the backend by running the configured C<teardown>
+command. A non-zero exit is an error.
+
+    $fw_helper->teardown;
 
 =cut
 

@@ -452,8 +452,10 @@ sub _kill_commands {
 
 =head2 init
 
-Initiates the backend. This will attempt to remove the rules and ipsets
-prior to re-adding them.
+Initiates the backend. Any stale direct rules and ipsets from a previous
+run are removed first, with failures ignored. Then the two ipsets are
+created via C<ipset create> and the block rules are added to the configured
+chain via C<firewall-cmd --direct --add-rule>.
 
     $backend->init;
 
@@ -523,7 +525,10 @@ sub init {
 
 =head2 ban
 
-Bans the IP.
+Bans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then added to the relevant ipset via C<ipset add>. If the
+kill option is set, conntrack(8) is used to drop existing connection
+tracking entries for the IP. Banning an already banned IP is a noop.
 
     $backend->ban(ban => $ip);
 
@@ -604,7 +609,9 @@ sub ban {
 
 =head2 unban
 
-Unbans the IP.
+Unbans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then removed from the relevant ipset via C<ipset del>.
+Unbanning an IP that is not banned is a noop.
 
     $backend->unban(ban => $ip);
 
@@ -673,7 +680,7 @@ sub unban {
 
 =head2 list
 
-List banned IPs.
+List banned IPs. Returns an array of the currently banned IPs.
 
     my @banned = $backend->list;
 
@@ -695,8 +702,8 @@ sub list {
 
 Tells the backend to re-init it's self.
 
-This will call teardown and init again. After that it will
-re-added all previously added bans.
+This will call teardown and init again. After that it will re-add all
+previously added bans via C<ipset add>.
 
     $backend->re_init;
 

@@ -314,7 +314,9 @@ sub _apply_family {
 
 =head2 init
 
-Initiates the backend, verifying each configured IP set with a get-ip-set.
+Initiates the backend. Runs C<aws wafv2 get-ip-set> for each configured IP
+set to verify it exists and is reachable, erroring if any of them fail.
+Nothing is modified.
 
 =cut
 
@@ -353,7 +355,12 @@ sub init {
 
 =head2 ban
 
-Bans an IP.
+Bans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then added to the ban list. The IP set for its family is
+then updated via a C<get-ip-set> to fetch the current LockToken followed by
+an C<update-ip-set> supplying the full banned list for that family, with
+single IPs rendered as /32 or /128 CIDRs. Banning an IP whose family has no
+IP set configured is an error. Banning an already banned IP is a noop.
 
     $fw_helper->ban( ban => $ip );
 
@@ -419,7 +426,10 @@ sub ban {
 
 =head2 unban
 
-Unbans an IP.
+Unbans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then removed from the ban list. The IP set for its family is
+then rewritten without it via a C<get-ip-set> plus C<update-ip-set> pair.
+Unbanning an IP that is not banned is a noop.
 
     $fw_helper->unban( ban => $ip );
 
@@ -497,7 +507,10 @@ sub _valid_cidr {
 =head2 ban_cidr
 
 Bans a CIDR range by adding it to the IP set for its family. WAFv2 IP sets
-store CIDR ranges natively, so the range is used as is.
+store CIDR ranges natively, so the range is used as is. The value of ban is
+validated as being a IPv4 or IPv6 CIDR and lowercased. Banning a CIDR whose
+family has no IP set configured is an error. Banning an already banned CIDR
+is a noop.
 
     $fw_helper->ban_cidr( ban => '1.2.3.0/24' );
 
@@ -562,7 +575,10 @@ sub ban_cidr {
 
 =head2 unban_cidr
 
-Unbans a CIDR range by removing it from the IP set for its family.
+Unbans a CIDR range by removing it from the IP set for its family, rewriting
+the set via a C<get-ip-set> plus C<update-ip-set> pair. The value of ban is
+validated as being a IPv4 or IPv6 CIDR and lowercased. Unbanning a CIDR that
+is not banned is a noop.
 
     $fw_helper->unban_cidr( ban => '1.2.3.0/24' );
 
@@ -620,7 +636,8 @@ sub unban_cidr {
 
 =head2 list_cidr
 
-List banned CIDR ranges.
+List banned CIDR ranges. Returns an array of the currently banned CIDR
+ranges from internal state; the IP sets are not queried.
 
     my @banned_cidrs = $fw_helper->list_cidr;
 
@@ -640,6 +657,10 @@ sub list_cidr {
 
 =head2 list
 
+List banned IPs. Returns an array of the currently banned single IPs from
+internal state; the IP sets are not queried. CIDR ranges are not included;
+for those see L</list_cidr>.
+
     my @banned = $fw_helper->list;
 
 =cut
@@ -658,7 +679,9 @@ sub list {
 
 =head2 re_init
 
-Re-applies the full banned set to each configured IP set.
+Tears down and re-initiates, then re-applies the full retained ban list,
+both single IPs and CIDR ranges, to each configured IP set via
+C<get-ip-set> plus C<update-ip-set>.
 
     $fw_helper->re_init;
 
@@ -695,8 +718,9 @@ sub re_init {
 
 =head2 teardown
 
-Empties each configured IP set. The internal ban list is kept so a following
-re_init restores it.
+Empties each configured IP set by pushing an empty address list via
+C<update-ip-set>. The internal ban list is kept so a following re_init
+restores it. The IP sets themselves are not deleted.
 
     $fw_helper->teardown;
 
@@ -745,8 +769,9 @@ sub stop {
 
 =head2 check
 
-Verifies each configured IP set still exists via a get-ip-set. Zero return is
-healthy.
+Verifies each configured IP set is still fetchable by running
+C<aws wafv2 get-ip-set> against it. Returns 1 if all succeed and 0 if any
+fail.
 
     $result=$fw_helper->check;
 
@@ -778,7 +803,9 @@ sub check {
 
 =head2 flush
 
-Empties each configured IP set and clears the ban list.
+Removes all bans at once by clearing the internal ban lists, both single
+IPs and CIDR ranges, and pushing the now empty address list to each
+configured IP set via C<update-ip-set>.
 
     $fw_helper->flush;
 

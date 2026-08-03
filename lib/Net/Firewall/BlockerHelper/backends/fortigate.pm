@@ -64,6 +64,8 @@ as well.
 
 =head2 new
 
+Initiates the object. Takes the following.
+
     - options :: Backend specific options. See below.
     - prefix :: Prefix to use. Must match /^[a-zA-Z0-9]+$/. Default kur.
     - name :: Name of this instance. Required.
@@ -548,7 +550,13 @@ sub init {
 
 =head2 ban
 
-Bans the IP by creating an address object and adding it to the group.
+Bans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased. A firewall address object named
+C<E<lt>prefixE<gt>_E<lt>nameE<gt>_E<lt>ipE<gt>> (dots and colons replaced
+with dashes) is created via a POST to C<firewall/address> (IPv4) or
+C<firewall/address6> (IPv6) and then added as a member of the family's
+address group via a POST to the group's C<member> endpoint. Banning an
+already banned IP is a noop.
 
     $backend->ban(ban => $ip);
 
@@ -619,7 +627,11 @@ sub ban {
 
 =head2 unban
 
-Unbans the IP by removing it from the group and deleting its address object.
+Unbans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased. The IP's address object is removed from the family's address
+group via a DELETE on the group's C<member> endpoint and then the address
+object itself is deleted via a DELETE on C<firewall/address> (IPv4) or
+C<firewall/address6> (IPv6). Unbanning an IP that is not banned is a noop.
 
     $backend->unban(ban => $ip);
 
@@ -708,8 +720,12 @@ sub _valid_cidr {
 
 =head2 ban_cidr
 
-Bans a CIDR range by creating a subnet address object and adding it to the
-group.
+Bans a CIDR range. The value of ban is validated as being a IPv4 or IPv6
+CIDR and lowercased. A subnet firewall address object named
+C<E<lt>prefixE<gt>_E<lt>nameE<gt>_E<lt>cidrE<gt>> (dots, colons, and slashes
+replaced with dashes) is created via a POST to C<firewall/address> (IPv4) or
+C<firewall/address6> (IPv6) and then added as a member of the family's
+address group. Banning an already banned CIDR is a noop.
 
     $backend->ban_cidr(ban => '1.2.3.0/24');
 
@@ -778,8 +794,11 @@ sub ban_cidr {
 
 =head2 unban_cidr
 
-Unbans a CIDR range by removing it from the group and deleting its address
-object.
+Unbans a CIDR range. The value of ban is validated as being a IPv4 or IPv6
+CIDR and lowercased. The CIDR's address object is removed from the family's
+address group via a DELETE on the group's C<member> endpoint and then the
+address object itself is deleted. Unbanning a CIDR that is not banned is a
+noop.
 
     $backend->unban_cidr(ban => '1.2.3.0/24');
 
@@ -848,7 +867,9 @@ sub unban_cidr {
 
 =head2 list_cidr
 
-List banned CIDR ranges.
+List banned CIDR ranges. Returns an array of the currently banned CIDRs from
+internal state; the FortiGate is not queried. Single IPs are not included;
+for those see L</list>.
 
     my @banned_cidrs = $backend->list_cidr;
 
@@ -868,7 +889,9 @@ sub list_cidr {
 
 =head2 list
 
-List banned IPs.
+List banned IPs. Returns an array of the currently banned single IPs from
+internal state; the FortiGate is not queried. CIDR ranges are not included;
+for those see L</list_cidr>.
 
     my @banned = $backend->list;
 
@@ -888,7 +911,10 @@ sub list {
 
 =head2 re_init
 
-Tears down and re-inits, then re-adds all previously added bans.
+Tears down and re-inits, then re-adds all previously added bans. Teardown is
+best effort, as a partially or fully wiped setup is what re_init recovers
+from. Each retained IP and CIDR ban is then re-applied by recreating its
+address object and group membership.
 
 =cut
 

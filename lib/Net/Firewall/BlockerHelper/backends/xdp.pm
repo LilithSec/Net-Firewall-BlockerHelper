@@ -292,7 +292,9 @@ sub init {
 
 =head2 ban
 
-Bans the IP by adding it to the XDP blocklist.
+Bans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then added to the XDP blocklist by running
+C<< xdp-filter ip <ip> -m <mode> >>. Banning an already banned IP is a noop.
 
     $backend->ban(ban => $ip);
 
@@ -358,7 +360,10 @@ sub ban {
 
 =head2 unban
 
-Unbans the an IP by removing it from the XDP blocklist.
+Unbans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then removed from the XDP blocklist by running
+C<< xdp-filter ip <ip> -m <mode> -r >>. Unbanning an IP that is not banned
+is a noop.
 
     $backend->unban(ban => $ip);
 
@@ -483,7 +488,7 @@ sub list_cidr {
 
 =head2 list
 
-List banned IPs.
+List banned IPs. Returns an array of the currently banned IPs.
 
     my @banned = $backend->list;
 

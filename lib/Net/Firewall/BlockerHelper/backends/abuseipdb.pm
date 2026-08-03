@@ -65,6 +65,8 @@ must be present as well.
 
 =head2 new
 
+Initiates the backend object. No API calls are made until L</init>.
+
     - options :: Backend specific options. See below.
     - prefix :: Prefix to use. Must match /^[a-zA-Z0-9]+$/. Default kur.
     - name :: Name of this instance. Required.
@@ -338,7 +340,8 @@ sub _request {
 =head2 init
 
 Initiates the backend. Verifies the API key and reachability via a minimal
-check call.
+GET to the v2 C</check> endpoint. Nothing is created remotely; there is no
+remote state to set up.
 
 =cut
 
@@ -369,9 +372,12 @@ sub init {
 
 =head2 ban
 
-Bans the IP by reporting it. A HTTP 429, AbuseIPDB's answer to reporting the
-same IP again inside its rate limit window, is treated as already reported
-rather than as an error.
+Bans the IP by reporting it. The value of ban is validated as being a IPv4 or
+IPv6 address and lowercased, then reported via a POST to the v2 C</report>
+endpoint with the configured categories and comment. A HTTP 429, AbuseIPDB's
+answer to reporting the same IP again inside its rate limit window, is
+treated as already reported rather than as an error. Banning an already
+banned IP is a noop.
 
     $backend->ban(ban => $ip);
 
@@ -438,8 +444,10 @@ sub ban {
 
 =head2 unban
 
-Unbans the IP. Reports can not be withdrawn, so this is purely internal
-bookkeeping and no API call is made.
+Unbans the IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then removed from the internal ban list. Reports can not be
+withdrawn, so no API call is made. Unbanning an IP that is not banned is a
+noop.
 
     $backend->unban(ban => $ip);
 
@@ -554,7 +562,8 @@ sub list_cidr {
 
 =head2 list
 
-List banned IPs.
+List banned IPs. Returns an array of the IPs reported since init, from the
+internal ban list; no API call is made.
 
     my @banned = $backend->list;
 
@@ -640,8 +649,9 @@ sub stop {
 
 =head2 check
 
-Verifies the API key and reachability are still usable via a minimal check
-call. Returns a true value if so and a false value otherwise. This is the
+Verifies the API key and reachability are still usable via a minimal GET to
+the v2 C</check> endpoint. Returns a true value if so and a false value
+otherwise. This is the
 equivalent of fail2ban's C<actioncheck>.
 
     if ( !$backend->check ) {

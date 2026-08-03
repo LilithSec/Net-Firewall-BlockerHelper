@@ -65,6 +65,8 @@ as well.
 
 =head2 new
 
+Initiates the backend object. Arguments are taken as a hash.
+
     - options :: Backend specific options. See below.
     - prefix :: Prefix to use. Must match /^[a-zA-Z0-9]+$/. Default kur.
     - name :: Name of this instance. Required.
@@ -405,7 +407,11 @@ sub _generate_token {
 
 =head2 init
 
-Initiates the backend. Generates an auth token from the credentials.
+Initiates the backend. POSTs the configured user and password via HTTP Basic
+auth to the token generation endpoint,
+C</api/fmc_platform/v1/auth/generatetoken>, and stores the returned
+C<X-auth-access-token> header for use on all subsequent requests. Nothing is
+done to the Network Group object itself.
 
 =cut
 
@@ -436,8 +442,11 @@ sub init {
 
 =head2 ban
 
-Bans the IP by adding it to the rendered Network Group literals and PUTing the
-full object.
+Bans an IP. The value of ban is validated as being a IPv4 or IPv6 address and
+lowercased, then added to the ban list. The full Network Group object,
+containing every current ban as a C<Host> literal, is rendered and PUT to the
+networkgroups endpoint. Banning an already banned IP is a noop. If the PUT
+fails, the IP is removed from the ban list again.
 
     $backend->ban(ban => $ip);
 
@@ -504,8 +513,11 @@ sub ban {
 
 =head2 unban
 
-Unbans the IP by removing it from the rendered Network Group literals and
-PUTing the full object.
+Unbans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then removed from the ban list. The full Network Group object
+is re-rendered without it and PUT to the networkgroups endpoint. Unbanning an
+IP that is not banned is a noop. If the PUT fails, the IP is restored to the
+ban list.
 
     $backend->unban(ban => $ip);
 
@@ -590,8 +602,11 @@ sub _valid_cidr {
 
 =head2 ban_cidr
 
-Bans a CIDR range by adding it to the rendered Network Group literals and
-PUTing the full object.
+Bans a CIDR range. The value of ban is validated as being a IPv4 or IPv6 CIDR
+range and lowercased, then added to the CIDR ban list. The full Network Group
+object, with the range as a C<Network> literal, is rendered and PUT to the
+networkgroups endpoint. Banning an already banned range is a noop. If the PUT
+fails, the range is removed from the ban list again.
 
     $backend->ban_cidr(ban => '1.2.3.0/24');
 
@@ -656,8 +671,11 @@ sub ban_cidr {
 
 =head2 unban_cidr
 
-Unbans a CIDR range by removing it from the rendered Network Group literals and
-PUTing the full object.
+Unbans a CIDR range. The value of ban is validated as being a IPv4 or IPv6
+CIDR range and lowercased, then removed from the CIDR ban list. The full
+Network Group object is re-rendered without it and PUT to the networkgroups
+endpoint. Unbanning a range that is not banned is a noop. If the PUT fails,
+the range is restored to the ban list.
 
     $backend->unban_cidr(ban => '1.2.3.0/24');
 
@@ -722,7 +740,9 @@ sub unban_cidr {
 
 =head2 list_cidr
 
-List banned CIDR ranges.
+List banned CIDR ranges. Returns an array of the currently banned ranges from
+internal state; the FMC is not queried. Single IPs are not included; for those
+see L</list>.
 
     my @banned_cidrs = $backend->list_cidr;
 
@@ -742,7 +762,9 @@ sub list_cidr {
 
 =head2 list
 
-List banned IPs.
+List banned IPs. Returns an array of the currently banned single IPs from
+internal state; the FMC is not queried. CIDR ranges are not included; for
+those see L</list_cidr>.
 
     my @banned = $backend->list;
 

@@ -54,7 +54,7 @@ have sufficient privileges to run it.
 
 =head2 new
 
-Initiates the the object.
+Initiates the object.
 
     - options :: Backend specific options that will be passed to the backend unchecked
             outside of making sure it is a hash ref if defined. See below for furhter info.
@@ -427,8 +427,13 @@ sub _kill_commands {
 
 =head2 init
 
-Initiates the backend. This will attempt to remove the table prior to
-re-creating it.
+Initiates the backend. First a best effort C<nft delete table> is run to
+clear any stale copy of the table, then the table
+C<< inet <prefix>_<name> >>, a base chain of the same name hooked to input
+at the configured priority, the IPv4 set (C<< <prefix>_<name>_4 >>), the
+IPv6 set (C<< <prefix>_<name>_6 >>), and the block rules referencing the
+sets are created via C<nft add>. A failure of any of the creation commands
+raises an error.
 
     $backend->init;
 
@@ -498,7 +503,11 @@ sub init {
 
 =head2 ban
 
-Bans the IP.
+Bans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then added to the family-appropriate set via
+C<nft add element>. If the C<kill> option is set, conntrack(8) is then used
+to drop existing connection tracking entries for the IP. Banning an already
+banned IP is a noop.
 
     $backend->ban(ban => $ip);
 
@@ -579,7 +588,9 @@ sub ban {
 
 =head2 unban
 
-Unbans the IP.
+Unbans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then removed from the family-appropriate set via
+C<nft delete element>. Unbanning an IP that is not banned is a noop.
 
     $backend->unban(ban => $ip);
 
@@ -648,7 +659,8 @@ sub unban {
 
 =head2 list
 
-List banned IPs.
+List banned IPs. Returns an array of the currently banned IPs from the
+retained in-memory state; the sets are not queried.
 
     my @banned = $backend->list;
 
@@ -668,10 +680,10 @@ sub list {
 
 =head2 re_init
 
-Tells the backend to re-init it's self.
-
-This will call teardown and init again. After that it will
-re-added all previously added bans.
+Tears down and re-initiates the backend, recreating the table, chain, sets,
+and rules, then re-adds every previously banned IP to the relevant set via
+C<nft add element>. The teardown is best effort as a partially or fully
+wiped setup is exactly what this needs to recover from.
 
     $backend->re_init;
 

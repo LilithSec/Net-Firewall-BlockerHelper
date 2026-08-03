@@ -55,6 +55,9 @@ reads the file on each connection.
 
 =head2 new
 
+Initiates the object. Not really meant to be used directly, but instead
+called via L<Net::Firewall::BlockerHelper>.
+
     - options :: A hash of options. See below.
     - name :: Required. Used, with prefix, to tag this instance's region.
     - prefix :: Defaults to 'kur'. Combined with name for the region tag.
@@ -278,6 +281,12 @@ sub init {
 
 =head2 ban
 
+Bans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then added to the ban list. This instance's marked region in
+the hosts.deny file is rewritten with a C<< <daemon> : <ip> >> line for each
+banned IP; content outside the region is preserved. Banning an already
+banned IP is a noop.
+
     $fw_helper->ban( ban => $ip );
 
 =cut
@@ -329,6 +338,12 @@ sub ban {
 
 =head2 unban
 
+Unbans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then removed from the ban list. This instance's marked
+region in the hosts.deny file is rewritten without it; if nothing remains
+banned the region, markers included, is removed entirely. Unbanning an IP
+that is not banned is a noop.
+
     $fw_helper->unban( ban => $ip );
 
 =cut
@@ -379,6 +394,9 @@ sub unban {
 } ## end sub unban
 
 =head2 list
+
+List banned IPs. Returns an array of the currently banned IPs from the
+in-memory ban list; the hosts.deny file is not parsed.
 
     my @banned = $fw_helper->list;
 
@@ -453,8 +471,10 @@ sub stop {
 
 =head2 check
 
-Verifies our marked region is present with every banned IP. With nothing
-banned there is nothing to verify and it reports healthy.
+Verifies our marked region is present in the file with a
+C<< <daemon> : <ip> >> line for every banned IP. Returns 1 if healthy and 0
+if not. With nothing banned there is nothing to verify and it reports
+healthy.
 
 =cut
 

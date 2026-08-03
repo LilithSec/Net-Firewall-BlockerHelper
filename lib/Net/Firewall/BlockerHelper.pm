@@ -305,7 +305,8 @@ sub new {
 
 =head2 init_backend
 
-Initiates the backend.
+Initiates the backend, creating the backend object and running its init. A
+failure is raised as backendInitError.
 
 No arguments are taken.
 
@@ -408,7 +409,10 @@ sub _valid_cidr {
 
 =head2 ban
 
-Bans the IP.
+Bans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then handed to the backend to ban. If self healing is
+enabled, the backend setup is checked and restored first. A backend failure
+is caught and re-raised as banFailed.
 
     $fw_helper->ban(ban => $ip);
 
@@ -525,7 +529,10 @@ sub ban_cidr {
 
 =head2 unban
 
-Unbans the an IP.
+Unbans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then handed to the backend to unban. If self healing is
+enabled, the backend setup is checked and restored first. A backend failure
+is caught and re-raised as unbanFailed.
 
     $fw_helper->unban(ban => $ip);
 
@@ -641,7 +648,9 @@ sub unban_cidr {
 
 =head2 list
 
-List banned IPs.
+List banned IPs. Returns an array of the currently banned single IPs as
+reported by the backend. CIDR range bans are not included; for those see
+L</list_cidr>.
 
     my @banned = $fw_helper->list;
 
@@ -708,7 +717,11 @@ sub list_cidr {
 
 =head2 re_init
 
-Tells the backend to re-init it's self.
+Tells the backend to re-init itself, rebuilding its firewall setup and
+re-applying the current ban list. A backend failure is caught and re-raised
+as reInitFailed.
+
+    $fw_helper->re_init;
 
 =cut
 
@@ -736,7 +749,12 @@ sub re_init {
 
 =head2 teardown
 
-Tears down the setup for the backend.
+Tells the backend to tear down its firewall setup, the equivalent of
+fail2ban's C<actionstop>. The ban list is retained by the backend so a
+following L</re_init> restores it. A backend failure is caught and re-raised
+as teardownFailed.
+
+    $fw_helper->teardown;
 
 =cut
 

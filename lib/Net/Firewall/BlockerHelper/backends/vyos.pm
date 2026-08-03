@@ -61,6 +61,8 @@ as well.
 
 =head2 new
 
+Initiates the object.
+
     - options :: Backend specific options. See below.
     - prefix :: Prefix to use. Must match /^[a-zA-Z0-9]+$/. Default kur.
     - name :: Name of this instance. Required.
@@ -359,8 +361,12 @@ sub _request {
 
 =head2 init
 
-Initiates the backend. Verifies the credentials and reachability by retrieving
-the address-group config.
+Initiates the backend. Verifies the credentials and reachability by POSTing
+a C<showConfig> operation for the address-group to C<< /retrieve >>.
+Nothing is created on the device; the referencing firewall rule must
+already exist.
+
+    $backend->init;
 
 =cut
 
@@ -394,7 +400,11 @@ sub init {
 
 =head2 ban
 
-Bans the IP by adding it to the address-group.
+Bans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then a C<set> operation for
+C<< firewall group address-group <group> address <ip> >> (or the
+C<ipv6-address-group> equivalent) is POSTed to C<< /configure >>. Banning
+an already banned IP is a noop.
 
     $backend->ban(ban => $ip);
 
@@ -461,7 +471,9 @@ sub ban {
 
 =head2 unban
 
-Unbans the IP by deleting it from the address-group.
+Unbans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then a C<delete> operation for its address-group entry is
+POSTed to C<< /configure >>. Unbanning an IP that is not banned is a noop.
 
     $backend->unban(ban => $ip);
 
@@ -546,7 +558,10 @@ sub _valid_cidr {
 
 =head2 ban_cidr
 
-Bans a CIDR range by adding it to the address-group.
+Bans a CIDR range by POSTing a C<set> operation for it to C<< /configure >>,
+adding it to the address-group in the same manner as a single IP. The value
+of ban is validated as being a IPv4 or IPv6 CIDR range and lowercased.
+Banning an already banned range is a noop.
 
     $backend->ban_cidr(ban => '1.2.3.0/24');
 
@@ -611,7 +626,10 @@ sub ban_cidr {
 
 =head2 unban_cidr
 
-Unbans a CIDR range by deleting it from the address-group.
+Unbans a CIDR range by POSTing a C<delete> operation for its address-group
+entry to C<< /configure >>. The value of ban is validated as being a IPv4
+or IPv6 CIDR range and lowercased. Unbanning a range that is not banned is
+a noop.
 
     $backend->unban_cidr(ban => '1.2.3.0/24');
 
@@ -676,7 +694,8 @@ sub unban_cidr {
 
 =head2 list_cidr
 
-List banned CIDR ranges.
+List banned CIDR ranges. Returns an array of the currently banned CIDR
+ranges. Single IPs are not included; for those see L</list>.
 
     my @banned_cidrs = $backend->list_cidr;
 
@@ -696,7 +715,8 @@ sub list_cidr {
 
 =head2 list
 
-List banned IPs.
+List banned IPs. Returns an array of the currently banned single IPs. CIDR
+ranges are not included; for those see L</list_cidr>.
 
     my @banned = $backend->list;
 
@@ -716,7 +736,12 @@ sub list {
 
 =head2 re_init
 
-Tears down and re-inits, then re-adds all previously added bans.
+Tears down and re-inits, then re-adds all previously added bans. teardown
+is best effort, as a partially or fully wiped setup is what this needs to
+recover from. Each retained single IP and CIDR ban is re-added via a C<set>
+operation POSTed to C<< /configure >>.
+
+    $backend->re_init;
 
 =cut
 
@@ -769,8 +794,8 @@ sub re_init {
 =head2 teardown
 
 Tears down the setup by deleting the address-group entry for each currently
-banned IP. The internal list of bans is kept, so a following re_init will
-re-add them.
+banned IP and CIDR range. The internal list of bans is kept, so a following
+re_init will re-add them.
 
 =cut
 
@@ -842,8 +867,10 @@ sub check {
 
 =head2 flush
 
-Removes all currently banned IPs at once by deleting their address-group
-entries and forgetting them.
+Removes all currently banned IPs and CIDR ranges at once by deleting their
+address-group entries and forgetting them.
+
+    $backend->flush;
 
 =cut
 

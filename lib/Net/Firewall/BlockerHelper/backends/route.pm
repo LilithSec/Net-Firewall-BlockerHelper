@@ -250,7 +250,10 @@ sub init {
 
 =head2 ban
 
-Bans the IP.
+Bans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then a route of the configured C<blocktype> is added for it
+via C<ip route add> (C<ip -6 route add> for IPv6). Banning an already
+banned IP is a noop.
 
     $backend->ban(ban => $ip);
 
@@ -316,7 +319,10 @@ sub ban {
 
 =head2 unban
 
-Unbans the IP.
+Unbans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then its route is removed via C<ip route del>
+(C<ip -6 route del> for IPv6). Unbanning an IP that is not banned is a
+noop.
 
     $backend->unban(ban => $ip);
 
@@ -400,7 +406,10 @@ sub _valid_cidr {
 
 =head2 ban_cidr
 
-Bans a CIDR range by adding a null route for it.
+Bans a CIDR range by adding a route of the configured C<blocktype> for it
+via C<ip route add>, the same way a single IP is handled. The value of ban
+is validated as being a IPv4 or IPv6 CIDR range and lowercased. Banning an
+already banned range is a noop.
 
     $backend->ban_cidr(ban => '1.2.3.0/24');
 
@@ -468,7 +477,9 @@ sub ban_cidr {
 
 =head2 unban_cidr
 
-Unbans a CIDR range by deleting its null route.
+Unbans a CIDR range by deleting its route via C<ip route del>. The value of
+ban is validated as being a IPv4 or IPv6 CIDR range and lowercased.
+Unbanning a range that is not banned is a noop.
 
     $backend->unban_cidr(ban => '1.2.3.0/24');
 
@@ -536,7 +547,8 @@ sub unban_cidr {
 
 =head2 list_cidr
 
-List banned CIDR ranges.
+List banned CIDR ranges. Returns an array of the currently banned CIDR
+ranges. Single IPs are not included; for those see L</list>.
 
     my @banned_cidrs = $backend->list_cidr;
 
@@ -556,7 +568,8 @@ sub list_cidr {
 
 =head2 list
 
-List banned IPs.
+List banned IPs. Returns an array of the currently banned single IPs. CIDR
+ranges are not included; for those see L</list_cidr>.
 
     my @banned = $backend->list;
 

@@ -282,7 +282,9 @@ sub init {
 
 =head2 ban
 
-Bans the IP.
+Bans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then C<< shorewall <type> <ip> >> is run, using
+C<shorewall6> for IPv6 addresses. Banning an already banned IP is a noop.
 
     $fw_helper->ban(ban => $ip);
 
@@ -348,7 +350,9 @@ sub ban {
 
 =head2 unban
 
-Unbans the an IP.
+Unbans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then C<< shorewall allow <ip> >> is run, using C<shorewall6>
+for IPv6 addresses. Unbanning an IP that is not banned is a noop.
 
     $fw_helper->unban(ban => $ip);
 
@@ -433,7 +437,10 @@ sub _valid_cidr {
 =head2 ban_cidr
 
 Bans a CIDR range. Shorewall's dynamic blacklisting accepts a network prefix
-in the same manner as a single address.
+in the same manner as a single address, so this runs
+C<< shorewall <type> <cidr> >>, using C<shorewall6> for IPv6 ranges. The
+value of ban is validated as being a IPv4 or IPv6 CIDR range and lowercased.
+Banning an already banned range is a noop.
 
     $fw_helper->ban_cidr(ban => '1.2.3.0/24');
 
@@ -497,7 +504,10 @@ sub ban_cidr {
 
 =head2 unban_cidr
 
-Unbans a CIDR range via C<< shorewall allow >>.
+Unbans a CIDR range by running C<< shorewall allow <cidr> >>, using
+C<shorewall6> for IPv6 ranges. The value of ban is validated as being a
+IPv4 or IPv6 CIDR range and lowercased. Unbanning a range that is not
+banned is a noop.
 
     $fw_helper->unban_cidr(ban => '1.2.3.0/24');
 
@@ -573,7 +583,8 @@ sub _cmd_for_cidr {
 
 =head2 list_cidr
 
-List banned CIDR ranges.
+List banned CIDR ranges. Returns an array of the currently banned CIDR
+ranges. Single IPs are not included; for those see L</list>.
 
     my @banned_cidrs = $fw_helper->list_cidr;
 
@@ -593,7 +604,8 @@ sub list_cidr {
 
 =head2 list
 
-List banned IPs.
+List banned IPs. Returns an array of the currently banned single IPs. CIDR
+ranges are not included; for those see L</list_cidr>.
 
     my @banned = $fw_helper->list;
 
@@ -689,7 +701,8 @@ sub re_init {
 
 Tears down the setup for the backend.
 
-This will C<allow> every currently banned IP.
+This will C<allow> every currently banned IP and CIDR range. The internal
+list of bans is kept, so a following re_init will re-add them.
 
     $fw_helper->teardown;
 
@@ -769,8 +782,9 @@ sub check {
 
 =head2 flush
 
-Removes all currently banned IPs at once by C<allow>ing each of them. This is
-the equivalent of fail2ban's C<actionflush>.
+Removes all currently banned IPs and CIDR ranges at once by C<allow>ing each
+of them and forgetting them. This is the equivalent of fail2ban's
+C<actionflush>.
 
     $fw_helper->flush;
 

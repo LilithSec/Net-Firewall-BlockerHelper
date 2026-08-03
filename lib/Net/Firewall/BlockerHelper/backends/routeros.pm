@@ -282,8 +282,10 @@ sub _remote {
 
 =head2 init
 
-Initiates the backend. This creates the filter rules referencing the
-address-lists for both families.
+Initiates the backend. Over SSH this runs C</ip firewall filter add> and
+C</ipv6 firewall filter add> to create a filter rule in the C<input> chain
+for each family, matching its address-list and applying the configured
+action.
 
 No arguments are taken.
 
@@ -333,7 +335,10 @@ sub init {
 
 =head2 ban
 
-Bans the IP.
+Bans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then added to the relevant address-list by running
+C</ip firewall address-list add> or C</ipv6 firewall address-list add>
+over SSH. Banning an already banned IP is a noop.
 
     $fw_helper->ban(ban => $ip);
 
@@ -405,7 +410,10 @@ sub ban {
 
 =head2 unban
 
-Unbans the an IP.
+Unbans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then its address-list entry is removed by running
+C<< /ip firewall address-list remove [find ...] >> or the IPv6 equivalent
+over SSH. Unbanning an IP that is not banned is a noop.
 
     $fw_helper->unban(ban => $ip);
 
@@ -502,7 +510,9 @@ sub _valid_cidr {
 =head2 ban_cidr
 
 Bans a CIDR range by adding it to the relevant address-list. RouterOS
-address-lists accept a network prefix in the same manner as a single address.
+address-lists accept a network prefix in the same manner as a single
+address. The value of ban is validated as being a IPv4 or IPv6 CIDR range
+and lowercased. Banning an already banned range is a noop.
 
     $fw_helper->ban_cidr(ban => '1.2.3.0/24');
 
@@ -572,7 +582,10 @@ sub ban_cidr {
 
 =head2 unban_cidr
 
-Unbans a CIDR range by removing it from the relevant address-list.
+Unbans a CIDR range by removing it from the relevant address-list via
+C<< address-list remove [find ...] >> over SSH. The value of ban is
+validated as being a IPv4 or IPv6 CIDR range and lowercased. Unbanning a
+range that is not banned is a noop.
 
     $fw_helper->unban_cidr(ban => '1.2.3.0/24');
 
@@ -648,7 +661,8 @@ sub unban_cidr {
 
 =head2 list_cidr
 
-List banned CIDR ranges.
+List banned CIDR ranges. Returns an array of the currently banned CIDR
+ranges. Single IPs are not included; for those see L</list>.
 
     my @banned_cidrs = $fw_helper->list_cidr;
 
@@ -668,7 +682,8 @@ sub list_cidr {
 
 =head2 list
 
-List banned IPs.
+List banned IPs. Returns an array of the currently banned single IPs. CIDR
+ranges are not included; for those see L</list_cidr>.
 
     my @banned = $fw_helper->list;
 

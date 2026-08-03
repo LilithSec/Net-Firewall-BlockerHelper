@@ -392,7 +392,10 @@ sub init {
 
 =head2 ban
 
-Bans the IP by creating an access rule for it.
+Bans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased, then an access rule is created for it via a POST to the
+access rules endpoint, using the configured mode and notes. Banning an
+already banned IP is a noop.
 
     $backend->ban(ban => $ip);
 
@@ -507,7 +510,11 @@ sub _unban_ip {
 
 =head2 unban
 
-Unbans the IP by finding and deleting its access rule.
+Unbans an IP. The value of ban is validated as being a IPv4 or IPv6 address
+and lowercased. The matching access rule is then found via a GET filtering
+on mode, notes, and the IP, and deleted by its ID. A rule that can not be
+found is treated as already unbanned. Unbanning an IP that is not banned is
+a noop.
 
     $backend->unban(ban => $ip);
 
@@ -594,7 +601,8 @@ sub _valid_cidr {
 
 Bans a CIDR range by creating an access rule for it. Cloudflare access rules
 accept a network prefix as the configuration value in the same manner as a
-single address.
+single address. The value of ban is validated as being a IPv4 or IPv6 CIDR
+range and lowercased. Banning an already banned range is a noop.
 
     $backend->ban_cidr(ban => '1.2.3.0/24');
 
@@ -685,7 +693,9 @@ sub _unban_cidr_lookup_url {
 
 =head2 unban_cidr
 
-Unbans a CIDR range by finding and deleting its access rule.
+Unbans a CIDR range by finding and deleting its access rule, the same way
+L</unban> does for a single IP. A rule that can not be found is treated as
+already unbanned. Unbanning a range that is not banned is a noop.
 
     $backend->unban_cidr(ban => '1.2.3.0/24');
 
@@ -763,7 +773,8 @@ sub unban_cidr {
 
 =head2 list_cidr
 
-List banned CIDR ranges.
+List banned CIDR ranges. Returns an array of the currently banned CIDR
+ranges. Single IPs are not included; for those see L</list>.
 
     my @banned_cidrs = $backend->list_cidr;
 
@@ -783,7 +794,8 @@ sub list_cidr {
 
 =head2 list
 
-List banned IPs.
+List banned IPs. Returns an array of the currently banned single IPs. CIDR
+ranges are not included; for those see L</list_cidr>.
 
     my @banned = $backend->list;
 
@@ -977,8 +989,9 @@ sub check {
 
 =head2 flush
 
-Removes all currently banned IPs at once by removing their access rules and
-forgetting them. This is the equivalent of fail2ban's C<actionflush>.
+Removes all currently banned IPs and CIDR ranges at once by removing their
+access rules and forgetting them. This is the equivalent of fail2ban's
+C<actionflush>.
 
     $backend->flush;
 

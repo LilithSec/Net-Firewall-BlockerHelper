@@ -325,7 +325,12 @@ sub init {
 
 =head2 ban
 
-Bans the IP by adding a TXT record for it. IPv4 only.
+Bans an IP. The value of ban is validated as being a IPv4 address; IPv6 is
+not supported and is an error. The octets are reversed and a TXT record is
+added at that name under the domain, eg banning 1.2.3.4 adds a TXT record
+at C<4.3.2.1.E<lt>domainE<gt>>, by piping an update with a nxrrset prereq
+into nsupdate authenticated via the TSIG keyfile. Banning an already banned
+IP is a noop.
 
     $backend->ban(ban => $ip);
 
@@ -397,7 +402,10 @@ sub ban {
 
 =head2 unban
 
-Unbans the IP by deleting its record.
+Unbans an IP. The value of ban is validated as being a IPv4 address; IPv6
+is not supported and is an error. The TXT record for the IP is deleted by
+piping an update delete for its record name into nsupdate. Unbanning an IP
+that is not banned is a noop.
 
     $backend->unban(ban => $ip);
 
@@ -524,7 +532,8 @@ sub list_cidr {
 
 =head2 list
 
-List banned IPs.
+List banned IPs. Returns an array of the currently banned IPs from the
+internal ban list.
 
     my @banned = $backend->list;
 
@@ -546,8 +555,8 @@ sub list {
 
 Tells the backend to re-init it's self.
 
-This will call teardown and init again. After that it will
-re-added all previously added bans.
+This will call teardown, which deletes the record for each banned IP, then
+init, and then re-add the TXT record for every retained ban via nsupdate.
 
     $backend->re_init;
 
