@@ -6,6 +6,7 @@ use warnings;
 use base 'Error::Helper';
 use Regexp::IPv4 qw($IPv4_re);
 use Regexp::IPv6 qw($IPv6_re);
+use Fcntl qw(:flock);
 
 =head1 NAME
 
@@ -51,6 +52,13 @@ rules and other instances (with a different prefix/name) coexist. Each ban
 is rendered as a C<< <daemon> : <ip> >> line, with IPv6 addresses bracketed,
 C<< <daemon> : [<ip>] >>, as that is the only IPv6 form libwrap matches. No
 reload is needed as libwrap reads the file on each connection.
+
+Updates are done under an exclusive flock(2) on C<< <file>.lock >>, which is
+created if needed and left in place, so concurrent processes updating the
+same file serialize rather than losing each others changes. The new contents
+are written to a temp file in the same directory and renamed into place, so
+the update is atomic and a partial file can never be seen. The mode of the
+file being replaced is carried over.
 
 =head1 METHODS
 
@@ -233,11 +241,50 @@ sub _read {
 } ## end sub _read
 
 # Internal helper. Rewrites the file with this instance's region refreshed from
-# the current ban list, preserving all other content. In testing mode it
-# records the rendered file in test_data instead.
+# the current ban list, preserving all other content. An exclusive lock on
+# <file>.lock is held across the read-modify-write so concurrent processes
+# serialize rather than losing each others changes, and the new contents are
+# written to a temp file that is renamed into place so a partial file can
+# never be seen. Failures are raised using the passed error code, so they
+# surface as the operation that triggered the write, such as banFailed. In
+# testing mode it records the rendered file in test_data instead.
 sub _apply {
 	my ( $self, $error_flag ) = @_;
 
+	$error_flag = 31 if ( !defined($error_flag) );
+
+	my $file = $self->{options}{file};
+
+	if ( $self->{testing} ) {
+		my $outside = $self->_strip_block( $self->_read );
+		my $block   = $self->_render_block;
+		$outside .= "\n" if ( $outside ne '' && $outside !~ /\n\z/ );
+		$self->{frontend_obj}->{test_data} = {
+			file    => $file,
+			block   => $block,
+			content => $outside . $block,
+		};
+		return;
+	}
+
+	# hold an exclusive lock across the read-modify-write so concurrent
+	# processes updating the same file serialize rather than clobbering
+	my $lock_fh;
+	if ( !open( $lock_fh, '>>', $file . '.lock' ) ) {
+		$self->{error}       = $error_flag;
+		$self->{errorString} = 'could not open the lock file "' . $file . '.lock"... ' . $!;
+		$self->warn;
+		return;
+	}
+	if ( !flock( $lock_fh, LOCK_EX ) ) {
+		$self->{error}       = $error_flag;
+		$self->{errorString} = 'could not get an exclusive lock on "' . $file . '.lock"... ' . $!;
+		$self->warn;
+		return;
+	}
+
+	# the read happens under the lock so the modify is based on what is
+	# actually current
 	my $current = $self->_read;
 	my $outside = $self->_strip_block($current);
 	my $block   = $self->_render_block;
@@ -248,27 +295,47 @@ sub _apply {
 	$outside .= "\n" if ( $outside ne '' && $outside !~ /\n\z/ );
 	my $content = $outside . $block;
 
-	if ( $self->{testing} ) {
-		$self->{frontend_obj}->{test_data} = {
-			file    => $self->{options}{file},
-			block   => $block,
-			content => $content,
-		};
+	# nothing would change, so leave the file untouched
+	if ( $content eq $current ) {
+		close($lock_fh);
 		return;
 	}
 
-	# nothing would change, so leave the file untouched
-	return if ( $content eq $current );
-
+	# write the new contents to a temp file in the same directory and rename
+	# it into place, making the change atomic; a reader or a crash mid write
+	# can never result in a partial file being seen or left
+	my $tmp = $file . '.tmp.' . $$;
 	my $fh;
-	if ( !open( $fh, '>', $self->{options}{file} ) ) {
-		$self->{error}       = 31;
-		$self->{errorString} = 'could not open "' . $self->{options}{file} . '" for writing... ' . $!;
+	if ( !open( $fh, '>', $tmp ) ) {
+		$self->{error}       = $error_flag;
+		$self->{errorString} = 'could not open "' . $tmp . '" for writing... ' . $!;
 		$self->warn;
 		return;
 	}
-	print( $fh $content );
-	close($fh);
+	if ( !print( $fh $content ) or !close($fh) ) {
+		my $save_err = $!;
+		unlink($tmp);
+		$self->{error}       = $error_flag;
+		$self->{errorString} = 'failed writing "' . $tmp . '"... ' . $save_err;
+		$self->warn;
+		return;
+	}
+
+	# carry the mode of the file being replaced over to the new one
+	if ( -e $file ) {
+		chmod( ( stat($file) )[2] & 07777, $tmp );
+	}
+
+	if ( !rename( $tmp, $file ) ) {
+		my $save_err = $!;
+		unlink($tmp);
+		$self->{error}       = $error_flag;
+		$self->{errorString} = 'could not rename "' . $tmp . '" into place as "' . $file . '"... ' . $save_err;
+		$self->warn;
+		return;
+	}
+
+	close($lock_fh);
 
 	return;
 } ## end sub _apply
@@ -683,7 +750,9 @@ Failed to flush the bans.
 
 =head2 31, fileWriteFailed
 
-Failed to open the file for writing.
+Failed to write the file. File write failures are normally raised using the
+error code of the operation that triggered the write, such as banFailed;
+this is the fallback if no operation code was passed internally.
 
 =head2 32, banCidrFailed
 
