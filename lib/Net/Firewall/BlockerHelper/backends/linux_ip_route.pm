@@ -53,14 +53,15 @@ routes, and keeps the internal list of bans so re_init can re-add them.
 
 =head1 NOTES
 
-This backend was written going off the iproute2 docs and actual testing
-is needed to double check a few things as the exact behavior is not
-clear.
+check looks for a ban's route using the type selector, for example
+C<ip route show type unreachable 192.0.2.4>. A missing route is reported
+by iproute2 as a zero exit with no output, which is what check keys off
+of.
 
-check looks for a ban's route via C<ip route show E<lt>blocktypeE<gt>
-E<lt>ipE<gt>> and it is not clear whether iproute2 wants that expressed
-as C<type E<lt>blocktypeE<gt>> instead, in which case check would always
-come back false.
+CIDR ranges must be passed with the host bits zeroed, such as
+C<192.0.2.0/24>. iproute2 rejects prefixes with host bits set, such as
+C<192.0.2.4/24>, with "Invalid prefix for given prefix length", which will
+show up as a banCidrFailed error.
 
 =head1 METHODS
 
@@ -228,13 +229,16 @@ sub new {
 } ## end sub new
 
 # Internal helper. Returns the ip route command for the passed action (add,
-# del, or show) and IP, using -6 for IPv6 IPs.
+# del, or show) and IP, using -6 for IPv6 IPs. For add and del the route type
+# is given bare as that is what the route spec wants, while for show it is a
+# selector and must be given via the type keyword.
 sub _route_command {
 	my ( $self, $action, $ip ) = @_;
 
 	my $family = ( $ip =~ /\A$IPv4_re\z/ ) ? '' : ' -6';
+	my $type = ( $action eq 'show' ) ? 'type ' : '';
 
-	return 'ip' . $family . ' route ' . $action . ' ' . $self->{options}{blocktype} . ' ' . $ip;
+	return 'ip' . $family . ' route ' . $action . ' ' . $type . $self->{options}{blocktype} . ' ' . $ip;
 }
 
 =head2 init

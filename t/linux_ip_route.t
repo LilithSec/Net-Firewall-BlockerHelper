@@ -29,7 +29,7 @@ is( $fw->{test_data}, 'already banned', 'double ban short-circuits' );
 is( $fw->check, 1, 'check reports healthy in testing mode' );
 is_deeply(
 	$fw->{test_data},
-	[ 'ip route show unreachable 1.2.3.4', 'ip -6 route show unreachable dead::1' ],
+	[ 'ip route show type unreachable 1.2.3.4', 'ip -6 route show type unreachable dead::1' ],
 	'check probes the route for each banned IP'
 );
 

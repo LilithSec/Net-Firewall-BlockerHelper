@@ -5,6 +5,13 @@ use warnings;
 use Test::More;
 
 BEGIN {
+	if ( $^O ne 'freebsd' ) {
+		plan skip_all =>
+			'ipfw is FreeBSD specific and protocol resolution relies on FreeBSD /etc/protocols entries such as icmp6';
+	}
+}
+
+BEGIN {
 	use_ok('Net::Firewall::BlockerHelper') || print "Bail out!\n";
 }
 
