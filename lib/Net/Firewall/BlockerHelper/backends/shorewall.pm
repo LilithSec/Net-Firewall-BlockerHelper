@@ -348,6 +348,10 @@ sub ban {
 		$self->{frontend_obj}->{test_data} = $command;
 	} else {
 		my $output = `$command 2>&1`;
+		# backticks give undef when the command could not be executed at all
+		if ( !defined($output) ) {
+			$output = 'no output, the command could not be executed... ' . $!;
+		}
 		if ( $? != 0 ) {
 			$self->{error} = 13;
 			$self->{errorString}
@@ -416,6 +420,10 @@ sub unban {
 		$self->{frontend_obj}->{test_data} = $command;
 	} else {
 		my $output = `$command 2>&1`;
+		# backticks give undef when the command could not be executed at all
+		if ( !defined($output) ) {
+			$output = 'no output, the command could not be executed... ' . $!;
+		}
 		if ( $? != 0 ) {
 			$self->{error} = 14;
 			$self->{errorString}
@@ -502,6 +510,10 @@ sub ban_cidr {
 		$self->{frontend_obj}->{test_data} = $command;
 	} else {
 		my $output = `$command 2>&1`;
+		# backticks give undef when the command could not be executed at all
+		if ( !defined($output) ) {
+			$output = 'no output, the command could not be executed... ' . $!;
+		}
 		if ( $? != 0 ) {
 			$self->{error} = 26;
 			$self->{errorString}
@@ -569,6 +581,10 @@ sub unban_cidr {
 		$self->{frontend_obj}->{test_data} = $command;
 	} else {
 		my $output = `$command 2>&1`;
+		# backticks give undef when the command could not be executed at all
+		if ( !defined($output) ) {
+			$output = 'no output, the command could not be executed... ' . $!;
+		}
 		if ( $? != 0 ) {
 			$self->{error} = 27;
 			$self->{errorString}
@@ -676,6 +692,10 @@ sub re_init {
 			push( @re_init_test_data, $command );
 		} else {
 			my $output = `$command 2>&1`;
+			# backticks give undef when the command could not be executed at all
+			if ( !defined($output) ) {
+				$output = 'no output, the command could not be executed... ' . $!;
+			}
 			if ( $? != 0 ) {
 				$self->{error} = 13;
 				$self->{errorString}
@@ -692,6 +712,10 @@ sub re_init {
 			push( @re_init_test_data, $command );
 		} else {
 			my $output = `$command 2>&1`;
+			# backticks give undef when the command could not be executed at all
+			if ( !defined($output) ) {
+				$output = 'no output, the command could not be executed... ' . $!;
+			}
 			if ( $? != 0 ) {
 				$self->{error} = 26;
 				$self->{errorString}
@@ -739,6 +763,10 @@ sub teardown {
 	} else {
 		foreach my $item (@commands) {
 			my $output = `$item 2>&1`;
+			# backticks give undef when the command could not be executed at all
+			if ( !defined($output) ) {
+				$output = 'no output, the command could not be executed... ' . $!;
+			}
 			if ( $? != 0 ) {
 				$self->{error} = 17;
 				$self->{errorString}
@@ -826,6 +854,10 @@ sub flush {
 	} else {
 		foreach my $item (@commands) {
 			my $output = `$item 2>&1`;
+			# backticks give undef when the command could not be executed at all
+			if ( !defined($output) ) {
+				$output = 'no output, the command could not be executed... ' . $!;
+			}
 			if ( $? != 0 ) {
 				$self->{error} = 25;
 				$self->{errorString}
