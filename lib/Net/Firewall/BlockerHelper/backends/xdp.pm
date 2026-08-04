@@ -618,9 +618,11 @@ sub stop {
 
 =head2 check
 
-Runs C<xdp-filter status> to verify the setup is still in place. A zero exit
-code is treated as healthy. This is the equivalent of fail2ban's
-C<actioncheck>.
+Runs C<xdp-filter status> to verify the setup is still in place. To be
+considered healthy the command must exit zero and every configured interface
+must be listed as loaded in its output; as the status is global, the exit
+code alone would miss a single interface having been unloaded. This is the
+equivalent of fail2ban's C<actioncheck>.
 
     if ( !$backend->check ) {
         $backend->re_init;
@@ -641,7 +643,19 @@ sub check {
 	}
 
 	my $output = `$command 2>&1`;
-	return $? == 0 ? 1 : 0;
+	if ( $? != 0 ) {
+		return 0;
+	}
+
+	# the status is global, so make sure each configured interface is still
+	# listed as loaded; a lone unloaded interface leaves the exit code zero
+	foreach my $iface ( @{ $self->{options}{interfaces} } ) {
+		if ( $output !~ /^\s*\Q$iface\E\s/m ) {
+			return 0;
+		}
+	}
+
+	return 1;
 } ## end sub check
 
 =head2 flush
