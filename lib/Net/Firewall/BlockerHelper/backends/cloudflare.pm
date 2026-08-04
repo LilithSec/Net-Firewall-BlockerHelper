@@ -54,6 +54,16 @@ L<LWP::UserAgent> is only loaded at run time, so it is only required if
 this backend is actually used. For https, L<LWP::Protocol::https> must be
 present as well.
 
+=head1 NOTES
+
+This backend was written going off the API docs and actual testing is
+needed to double check a few things as the exact behavior is not clear.
+
+teardown currently only removes the single IP access rules, leaving CIDR
+bans in place remotely, while flush removes both. A re_init after a
+teardown will re-add the CIDR bans, and how the API handles creating a
+rule that already exists needs checking.
+
 =head1 METHODS
 
 =head2 new
@@ -356,8 +366,8 @@ sub _request {
 
 =head2 init
 
-Initiates the backend. Verifies the credentials and endpoint by fetching a
-single rule.
+Initiates the backend. Verifies the credentials and endpoint by listing a
+few rules.
 
     $backend->init;
 
@@ -959,8 +969,8 @@ sub stop {
 
 =head2 check
 
-Verifies the endpoint and credentials are still usable by fetching a single
-rule. Returns a true value if so and a false value otherwise. This is the
+Verifies the endpoint and credentials are still usable by listing a few
+rules. Returns a true value if so and a false value otherwise. This is the
 equivalent of fail2ban's C<actioncheck>.
 
     if ( !$backend->check ) {

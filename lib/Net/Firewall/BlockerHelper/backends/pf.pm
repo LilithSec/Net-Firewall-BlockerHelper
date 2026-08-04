@@ -21,6 +21,21 @@ our $VERSION = '0.1.0';
 
 =head1 SYNOPSIS
 
+The rules and table this backend creates all live under the anchor
+C<< <prefix>/<name> >>, which is what allows them to be managed
+dynamically without ever touching the main ruleset. pf will only
+evaluate the anchor if C<pf.conf> contains an anchor rule for it though,
+so a bit of one time setup is required. With the default prefix of
+C<kur> that means adding the like of the following and reloading
+C<pf.conf>.
+
+    anchor "kur/*"
+
+The rules loaded into the anchor are C<block drop quick> rules, so they
+will win out over any non-C<quick> pass rules regardless of placement,
+but the anchor line does need to come before any C<quick> pass rules
+that would otherwise match the traffic in question.
+
     use Net::Firewall::BlockerHelper::backends::pf;
 
     my $backend1;
@@ -330,6 +345,9 @@ previous run do not linger. Then the table C<< <prefix>_<name> >> is
 created (persist, with counters) and C<block drop quick> rules for the
 configured protocols and ports are loaded into the anchor
 C<< <prefix>/<name> >> via C<pfctl -f->.
+
+Note that C<pf.conf> must contain a matching anchor rule for any of this
+to have an effect. See L</SYNOPSIS>.
 
 No arguments are taken.
 

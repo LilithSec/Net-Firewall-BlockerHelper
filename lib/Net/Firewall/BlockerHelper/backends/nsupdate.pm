@@ -21,6 +21,25 @@ our $VERSION = '0.1.0';
 
 =head1 SYNOPSIS
 
+All this backend does is add and remove TXT records, so two bits of
+external setup are required for bans to actually mean anything. First the
+zone the records live under must exist on the DNS server and allow dynamic
+updates authenticated via the TSIG key, the like of the following in
+C<named.conf> for BIND, with the key also declared there via a C<key>
+statement matching the keyfile.
+
+    zone "rbl.foo.bar" {
+        type primary;
+        file "rbl.foo.bar.db";
+        allow-update { key "nsupdate-key"; };
+    };
+
+Second, a DNS record on its own blocks nothing. Whatever should be turning
+away the banned IPs must be configured to consult the resulting blocklist.
+Also worth noting is that only TXT records are created, while the usual
+DNSBL style lookup checks for an A record, so the consumer needs to be
+something that can be pointed at TXT records.
+
     use Net::Firewall::BlockerHelper;
 
     my $fw_helper = Net::Firewall::BlockerHelper->new(
@@ -295,6 +314,9 @@ sub _nsupdate_command {
 =head2 init
 
 Initiates the backend. Verifies the keyfile exists.
+
+Note that the zone must allow updates via the key and something must be
+consuming the blocklist for bans to have an effect. See L</SYNOPSIS>.
 
     $backend->init;
 

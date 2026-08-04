@@ -9,7 +9,7 @@ use Regexp::IPv6 qw($IPv6_re);
 
 =head1 NAME
 
-Net::Firewall::BlockerHelper::backends::bgp_rtbh - BGP Remote Triggered Black Hole backend (via ExaBGP).
+Net::Firewall::BlockerHelper::backends::bgp_rtbh - BGP Remote Triggered Black Hole backend (via ExaBGP, GoBGP, or FRR).
 
 =head1 VERSION
 
@@ -888,8 +888,10 @@ sub stop {
 
 Runs the driver's neighbor summary command (C<exabgpcli show neighbor
 summary>, C<gobgp neighbor>, or C<vtysh -c 'show ip bgp summary'> for frr)
-and treats a zero exit as healthy, returning 1, and 0 otherwise. This
-confirms the BGP daemon is reachable so the announcements are live.
+and treats a zero exit as healthy, returning 1, and 0 otherwise. This only
+confirms the BGP daemon holding the announcements is reachable; whether the
+sessions to the routers are up and the announcements accepted is not
+checked.
 
 =cut
 

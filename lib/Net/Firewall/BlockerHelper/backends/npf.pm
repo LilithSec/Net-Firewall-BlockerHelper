@@ -45,6 +45,9 @@ declared in C<npf.conf>, for example...
     table <fail2ban> type ipset
     block in final from <fail2ban>
 
+Note that C<ipset> tables only hold single addresses; if CIDR bans are
+going to be used, the table needs to be declared C<type lpm> instead.
+
 init and check verify the table exists. Ports and protocols are not
 supported by this backend as they belong to the rule in C<npf.conf>;
 specifying either is an error. teardown flushes the table (the table itself
@@ -436,8 +439,10 @@ sub _valid_cidr {
 
 =head2 ban_cidr
 
-Bans a CIDR range by adding it to the npf table. npf tables accept a network
-prefix in the same manner as a single address.
+Bans a CIDR range by adding it to the npf table. Tables of type C<lpm>
+accept a network prefix in the same manner as a single address; C<ipset>
+tables do not, so for this to work the table must be declared C<type lpm>
+in C<npf.conf>.
 
     $backend->ban_cidr(ban => '1.2.3.0/24');
 

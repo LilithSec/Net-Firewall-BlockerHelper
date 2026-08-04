@@ -54,6 +54,16 @@ L<LWP::UserAgent> is only loaded at run time, so it is only required if this
 backend is actually used. For https, L<LWP::Protocol::https> must be present
 as well.
 
+=head1 NOTES
+
+This backend was written going off the API docs and actual testing is
+needed to double check a few things as the exact behavior is not clear.
+
+teardown currently only removes the single IP entries from the ACL,
+leaving CIDR entries in place, while flush removes both. A re_init after
+a teardown will re-add the CIDR entries, and how the API handles creating
+an entry that already exists needs checking.
+
 =head1 METHODS
 
 =head2 new

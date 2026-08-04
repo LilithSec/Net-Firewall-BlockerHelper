@@ -313,8 +313,11 @@ sub _curl {
 
 =head2 init
 
-Initiates the backend. This verifies the alias is reachable by listing
-it via the API.
+Initiates the backend. This lists the alias via the API, with a zero curl
+exit code treated as success. As the default curl_cmd of C<curl -s> exits
+zero on HTTP level errors, this catches connection level problems rather
+than the likes of a missing alias or bad credentials; add C<-f> to
+curl_cmd if those should fail it as well.
 
 No arguments are taken.
 

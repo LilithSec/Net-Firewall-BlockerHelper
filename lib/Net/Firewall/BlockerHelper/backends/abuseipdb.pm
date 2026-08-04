@@ -51,7 +51,7 @@ at the time of writing) is answered with a HTTP 429, which this backend
 treats as already reported rather than as an error, so replaying saved ban
 state through ban does not error out.
 
-Both IPv4 and IPv6 are supported. Blocking is per IP; ports and protocols are
+Both IPv4 and IPv6 are supported. Reporting is per IP; ports and protocols are
 not supported and specifying them is an error.
 
 The comment sent with each report is publicly visible on AbuseIPDB, so do not

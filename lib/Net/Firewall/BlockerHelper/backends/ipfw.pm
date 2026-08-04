@@ -21,6 +21,14 @@ our $VERSION = '0.1.0';
 
 =head1 SYNOPSIS
 
+The block rules this backend creates are added straight into the main
+ruleset at the configured rule number, the C<rule> option, default 150, so
+no additional wiring is needed for them to be evaluated. What does need
+minding is placement, as ipfw is first match wins. The rule number needs to
+be lower than that of any rule that would pass the traffic in question,
+such as a C<check-state> or an allow rule, otherwise the bans will never
+match anything.
+
     use Net::Firewall::BlockerHelper::backends::ipfw;
 
     my $backend1;
@@ -112,9 +120,9 @@ Initiates the object. Takes the arguments below.
 
 The options hash accepts the following.
 
-    - rule :: The rule name to use for the IPFW rule. This should not
-            re-used or it will result in the other rules being removed
-            when init is called.
+    - rule :: The rule number to use for the IPFW rules. This should not
+            be re-used or it will result in the other rules at that number
+            being removed when init is called.
         - Default :: 150
 
     - type :: The drop method to use. 'deny' silently drops. 'unreach' and
@@ -463,6 +471,9 @@ number for each configured protocol, matching from C<table(...)> to C<me> or
 C<me6> depending on the family, with the configured ports appended for
 port-capable protocols (tcp/udp/sctp). The action is C<deny> or, for reject
 types, C<unreach>/C<unreach6> per the family of the rule.
+
+Note that as ipfw is first match wins, the configured rule number needs to
+come before any rules that would pass the traffic. See L</SYNOPSIS>.
 
 No arguments are taken.
 

@@ -21,6 +21,20 @@ our $VERSION = '0.1.0';
 
 =head1 SYNOPSIS
 
+The rendered file has no effect on its own; whatever is meant to consume it
+must be configured to read it and the C<reload> option set to whatever
+makes it re-read it. So for the nginx example below, nginx needs a line
+like the following in the relevant C<http> or C<server> context.
+
+    include /etc/nginx/blocklist.conf;
+
+Also worth noting is that with C<remove_on_teardown> left at its default
+of 1, teardown unlinks the file, so a consumer that errors on a missing
+include, nginx included, will then fail to reload or start till the file
+exists again. For consumers like that either set C<remove_on_teardown>
+to 0, which leaves an empty file in place instead, or make sure the file
+gets created before the consumer needs it.
+
     use Net::Firewall::BlockerHelper;
 
     my $fw_helper = Net::Firewall::BlockerHelper->new(
@@ -248,6 +262,9 @@ sub _apply {
 
 Initiates the backend, rendering an initial (empty unless bans were
 pre-seeded) file and running the reload hook.
+
+Note that the consumer must be configured to read the rendered file for any
+of this to have an effect. See L</SYNOPSIS>.
 
 =cut
 
@@ -542,9 +559,9 @@ sub list {
 
 =head2 re_init
 
-Tears down and re-initiates, re-rendering the file from the retained ban
-list. As the file is always rendered from full state, this is really just a
-teardown followed by init.
+Re-renders the file from the retained ban list and runs the reload hook. As
+the file is always rendered from full state, nothing needs tearing down
+first; a single re-render restores everything.
 
 =cut
 

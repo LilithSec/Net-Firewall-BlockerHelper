@@ -9,7 +9,7 @@ use Regexp::IPv6 qw($IPv6_re);
 
 =head1 NAME
 
-Net::Firewall::BlockerHelper::backends::shell - A shell backend for Net::Firewall::BlockHelper.
+Net::Firewall::BlockerHelper::backends::shell - A shell backend for Net::Firewall::BlockerHelper.
 
 =head1 VERSION
 
@@ -20,6 +20,12 @@ Version 0.1.0
 our $VERSION = '0.1.0';
 
 =head1 SYNOPSIS
+
+This backend just runs the commands configured via the options hash, so
+what init, ban, and the like actually do is entirely up to the commands
+supplied. Wiring them up to something that really blocks traffic is the
+user's job. The example below just creates and removes files under C</tmp>
+to show the flow and blocks nothing.
 
     use Net::Firewall::BlockerHelper;
 
@@ -45,7 +51,7 @@ our $VERSION = '0.1.0';
             . $Error::Helper::errorFlag . "\n";
     }
 
-    $fw_helper->init;
+    $fw_helper->init_backend;
 
     $fw_helper->ban(ban => '5.6.7.8');
     $fw_helper->ban(ban => '1.2.3.4');
@@ -249,11 +255,14 @@ sub new {
 Initiates the backend by running the configured C<init> command with
 '2>&1' appended. A non-zero exit is an error.
 
+Note that what this actually sets up is entirely down to the configured
+command. See L</SYNOPSIS>.
+
 No arguments are taken.
 
 If called a second time, it will error.
 
-    $fw_helper->init;
+    $backend->init;
 
 =cut
 

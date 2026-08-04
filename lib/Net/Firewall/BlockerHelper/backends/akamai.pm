@@ -48,13 +48,17 @@ Akamai's EdgeGrid (C<EG1-HMAC-SHA256>) request signing scheme.
 The network list identified by the C<network_list_id> option must already
 exist. This backend only manages the membership of that list.
 
-Blocking is per IP; ports and protocols are not supported and specifying
-them is an error.
+Blocking is per IP or CIDR range; ports and protocols are not supported and
+specifying them is an error.
 
 B<Note:> Changes to a network list made via the API do not take effect until
 the list is activated (staging and/or production). Activation is out of scope
 for this backend and must be performed separately, either via the Akamai
 control center or the activation endpoints of the Network Lists API.
+Similarly, membership in the list does not block anything on its own; the
+list must actually be used by a security policy, eg as the block list of a
+IP/Geo firewall rule. Wiring the list into a policy is likewise out of scope
+for this backend.
 
 L<LWP::UserAgent> is only loaded at run time, so it is only required if this
 backend is actually used. For https, L<LWP::Protocol::https> must be present
@@ -434,6 +438,9 @@ sub _request {
 Initiates the backend. Verifies the credentials and endpoint by GETing the
 network list at C</network-list/v2/network-lists/$network_list_id>. Nothing
 is created remotely; the list must already exist.
+
+Note that for bans to have an effect the list must also be activated and in
+use by a security policy. See L</DESCRIPTION>.
 
     $backend->init;
 

@@ -989,8 +989,8 @@ sub re_init {
 =head2 teardown
 
 Tears down the setup by removing the group membership and address object for
-each currently banned IP. The internal list of bans is kept, so a following
-re_init will re-add them.
+each currently banned IP and CIDR. The internal list of bans is kept, so a
+following re_init will re-add them.
 
 =cut
 
@@ -1066,8 +1066,8 @@ sub check {
 
 =head2 flush
 
-Removes all currently banned IPs at once by removing their group membership
-and address objects and forgetting them.
+Removes all currently banned IPs and CIDRs at once by removing their group
+membership and address objects and forgetting them.
 
 =cut
 

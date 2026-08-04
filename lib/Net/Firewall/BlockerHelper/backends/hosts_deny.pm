@@ -258,8 +258,9 @@ sub _apply {
 
 =head2 init
 
-Initiates the backend. Removes any stale region for this instance and writes
-a fresh (empty) one.
+Initiates the backend. Removes any stale region for this instance from the
+file. The markers are only written when there is something banned, so with
+no bans nothing is added.
 
 =cut
 
@@ -612,7 +613,7 @@ The backend has not been inited yet.
 
 =head2 7, invalidName
 
-The name is either undef or does not match /^[a-zA-Z0-9\-]+$/.
+The name is undef.
 
 =head2 8, optionsNotHash
 

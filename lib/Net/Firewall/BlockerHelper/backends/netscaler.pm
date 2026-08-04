@@ -46,8 +46,9 @@ action, but using L<LWP::UserAgent> rather than curl. The dataset can then
 be used to block the IPs via responder policies at a vserver or global
 level.
 
-The dataset must already exist on the NetScaler; init and check verify the
-API is reachable and auth works.
+The dataset must already exist on the NetScaler, as must a responder or
+similar policy referencing it, as binding IPs into the dataset does nothing
+by itself; init and check only verify the API is reachable and auth works.
 
 Blocking is per IP; ports and protocols are not supported and specifying
 them is an error.

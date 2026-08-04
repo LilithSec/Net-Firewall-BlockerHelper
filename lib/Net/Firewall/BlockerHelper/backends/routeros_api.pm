@@ -58,6 +58,16 @@ L<LWP::UserAgent> is loaded at run time, so it is only required when this
 backend is actually used. For https, L<LWP::Protocol::https> must be present
 as well.
 
+=head1 NOTES
+
+This backend was written going off the API docs and actual testing is
+needed to double check a few things as the exact behavior is not clear.
+
+teardown currently only removes the single IP address-list entries,
+leaving CIDR entries on the router, while flush removes both. A re_init
+after a teardown will re-add the CIDR entries, and whether RouterOS then
+errors or ends up with duplicate entries needs checking.
+
 =head1 METHODS
 
 =head2 new
@@ -338,7 +348,7 @@ Initiates the backend. Verifies the credentials and reachability by
 performing a GET against the IPv4 address-list endpoint. Nothing is created
 on the router; the referencing firewall rule must already exist.
 
-    $fw_helper->init;
+    $backend->init;
 
 =cut
 

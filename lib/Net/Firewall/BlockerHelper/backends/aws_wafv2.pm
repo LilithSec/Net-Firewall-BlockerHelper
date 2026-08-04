@@ -54,7 +54,10 @@ address list plus that token (WAFv2 uses optimistic locking). The full banned
 set for the family is rendered on every change.
 
 This backend manages only the IP set contents; the IP set(s) and the WAF rule
-and Web ACL referencing them must already exist.
+and Web ACL referencing them must already exist. The Web ACL must also be
+associated with the resources to be protected, ALBs, API Gateways, and the
+like for REGIONAL or the distribution for CLOUDFRONT, as a Web ACL nothing
+uses blocks nothing.
 
 Requires the C<aws> CLI in the C<PATH>, configured with credentials able to
 get and update the IP sets.
@@ -317,6 +320,9 @@ sub _apply_family {
 Initiates the backend. Runs C<aws wafv2 get-ip-set> for each configured IP
 set to verify it exists and is reachable, erroring if any of them fail.
 Nothing is modified.
+
+Note that for bans to have an effect the Web ACL referencing the IP sets
+must be associated with the resources to be protected. See L</DESCRIPTION>.
 
 =cut
 

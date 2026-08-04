@@ -60,6 +60,16 @@ L<LWP::UserAgent> is only loaded at run time, so it is only required if
 this backend is actually used. For https, L<LWP::Protocol::https> must be
 present as well.
 
+=head1 NOTES
+
+This backend was written going off the API docs and actual testing is
+needed to double check a few things as the exact behavior is not clear.
+
+ban_cidr sends the alias update with the type still set to host and it is
+not clear whether the API will accept CIDR entries in a host type alias
+or if a network type alias is required, in which case the type used will
+need changing.
+
 =head1 METHODS
 
 =head2 new

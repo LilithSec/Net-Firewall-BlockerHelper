@@ -44,7 +44,7 @@ our $VERSION = '0.1.0';
             . $Error::Helper::errorFlag . "\n";
     }
 
-    $fw_helper->init;
+    $fw_helper->init_backend;
 
     $fw_helper->ban(ban => '5.6.7.8');
     $fw_helper->ban(ban => '1.2.3.4');
@@ -64,6 +64,14 @@ C<< <prefix>_<name> >> under the C</ip firewall> menu) and one for IPv6
 filter rule in the C<input> chain references each address-list and applies
 the configured action. Banning an IP is then simply a matter of adding it
 to the relevant address-list.
+
+The filter rules are created via a plain C<add>, which appends them to the
+end of the C<input> chain. As RouterOS filter rules are evaluated first
+match wins, any earlier rule accepting the traffic will win out over them,
+so on a router with the likes of a broad accept rule in C<input> the rules
+will need to be moved up the chain for bans to actually take effect. Also,
+being in the C<input> chain, they only cover traffic to the router itself
+and not traffic forwarded through it.
 
 Requires an SSH client in the C<PATH> of the process and credentials that
 allow the configured user to run firewall commands on the router.
@@ -287,11 +295,15 @@ C</ipv6 firewall filter add> to create a filter rule in the C<input> chain
 for each family, matching its address-list and applying the configured
 action.
 
+Note that the rules are appended to the end of the C<input> chain, so they
+may need moving up past any earlier accept rules to have an effect. See
+L</DESCRIPTION>.
+
 No arguments are taken.
 
 May called a second time, it will error.
 
-    $fw_helper->init;
+    $backend->init;
 
 =cut
 

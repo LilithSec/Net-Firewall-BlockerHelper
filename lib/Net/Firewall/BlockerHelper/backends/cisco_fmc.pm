@@ -42,8 +42,9 @@ our $VERSION = '0.1.0';
 
 Blocks IPs on a Cisco Firepower Management Center (FMC) via its REST API. A
 single Network Group object is managed; its C<literals> list is rendered from
-the internal set of banned IPs and PUT to the FMC in full on each change. Both
-IPv4 and IPv6 addresses are rendered as C<Host> literals.
+the internal set of banned IPs and CIDR ranges and PUT to the FMC in full on
+each change. Both IPv4 and IPv6 addresses are rendered as C<Host> literals
+and CIDR ranges as C<Network> literals.
 
 A firewall access control policy referencing the Network Group must already
 exist, and after any change a policy deployment is required on the FMC for the
@@ -54,8 +55,8 @@ Auth is via a username and password, POSTed to the token generation endpoint;
 the returned C<X-auth-access-token> header is then sent on every subsequent
 request. The credentials and token are carried as headers only.
 
-Blocking is per IP; ports and protocols are not supported and specifying them
-is an error.
+Blocking is per IP or CIDR range; ports and protocols are not supported and
+specifying them is an error.
 
 L<LWP::UserAgent> is loaded at run time, so it is only required when this
 backend is actually used. For https, L<LWP::Protocol::https> must be present
@@ -898,8 +899,8 @@ sub check {
 
 =head2 flush
 
-Removes all currently banned IPs at once by PUTing the Network Group object
-with an empty literal set and forgetting them.
+Removes all currently banned IPs and CIDR ranges at once by PUTing the
+Network Group object with an empty literal set and forgetting them.
 
 =cut
 

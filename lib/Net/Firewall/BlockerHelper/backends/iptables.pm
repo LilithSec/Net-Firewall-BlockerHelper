@@ -21,6 +21,16 @@ our $VERSION = '0.1.0';
 
 =head1 SYNOPSIS
 
+Everything this backend needs is wired in by init itself, the jump from
+C<INPUT> to its chain included, so no ruleset changes are needed
+beforehand. The jump is appended to the end of C<INPUT> though, and
+iptables is first match wins, so any earlier rule accepting the traffic in
+question, such as a blanket ACCEPT for a port or an established/related
+state rule, will win out over the bans. If bans appear to have no effect,
+check where the jump to C<< <prefix>_<name> >> sits via
+C<iptables -L INPUT> and relocate it above such rules; the backend finds
+it by rule spec rather than position, so moving it is safe.
+
     use Net::Firewall::BlockerHelper::backends::iptables;
 
     my $backend1;
@@ -100,10 +110,11 @@ Initiates the the object.
             duplicates are removed.
         - Default :: []
 
-    - protocols :: A array of protocols to block. By default will block all. This
+    - protocols :: A array of protocols to block. By default will block all,
+            unless ports are given, in which case it defaults to tcp and udp. This
             is checked against /etc/protocols via the function getprotobyname. Duplicates
             will be discarded.
-        - Default :: []
+        - Default :: [], or ['tcp','udp'] when ports are given
 
     - prefix :: Prefix to use. Must match the regex /^[a-zA-Z0-9]+$/
         - default :: kur
@@ -663,6 +674,9 @@ C<ip6tables -N>, populates it with the block rules built from the configured
 type, protocols, and ports, and appends a jump to it from C<INPUT>. For the
 tarpit and delude types a same-named chain holding the C<-j CT --notrack>
 rules is also created in the C<raw> table and jumped to from C<PREROUTING>.
+
+Note that the jump is appended to the end of C<INPUT>, so earlier rules
+accepting the traffic win out over the bans. See L</SYNOPSIS>.
 
 Before any of that, matching stale chains and ipsets from a previous run are
 removed; those cleanup commands are allowed to fail.

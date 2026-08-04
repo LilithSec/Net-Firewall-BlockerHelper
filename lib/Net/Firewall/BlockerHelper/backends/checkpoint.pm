@@ -42,7 +42,10 @@ our $VERSION = '0.1.0';
 
 Blocks IPs on a Check Point Security Management server via its C<web_api>. For
 each banned IP a host object is created and added as a member of a group object;
-a rule in the policy referencing that group then drops the traffic.
+a rule in the policy referencing that group then drops the traffic. The group
+object (default C<< <prefix>_<name> >>) and the drop rule referencing it must
+already exist; this backend creates neither, only the host objects added to the
+group.
 
 Authentication is session based. L</init> POSTs to C<< /web_api/login >> with the
 configured user and password and stores the returned session id. Every following
@@ -60,6 +63,15 @@ C<install-policy>, which is intentionally out of scope for this backend.
 
 L<LWP::UserAgent> is loaded at run time, so it is only required when this backend
 is actually used. For https, L<LWP::Protocol::https> must be present as well.
+
+=head1 NOTES
+
+This backend was written going off the API docs and actual testing is
+needed to double check a few things as the exact behavior is not clear.
+
+ban_cidr creates a host object with the CIDR as its ip-address and the
+C</> is kept in the generated object name, and it is not clear whether
+the web_api will accept either; a network object may be required instead.
 
 =head1 METHODS
 
@@ -356,6 +368,9 @@ sub _unban_requests {
 Initiates the backend. Logs into the web_api by POSTing the configured user and
 password to C<< /web_api/login >> and stores the returned session id, which is
 sent in the C<X-chkp-sid> header on every following call.
+
+Note that nothing is created remotely by this; the group object must already
+exist. See L</DESCRIPTION>.
 
 =cut
 

@@ -36,8 +36,12 @@ our $VERSION = '0.1.0';
 =head1 DESCRIPTION
 
 Blocks whole IPs via null routes using L<ip(8)> from iproute2. Fast for very
-large numbers of blocked IPs, blocks traffic before it enters any firewall
-chains, and requires no firewall at all, making it a good fallback.
+large numbers of blocked IPs and requires no firewall at all, making it a
+good fallback. The routes are destination based, so what is directly stopped
+is traffic headed back to the banned IP, which is enough to keep connections
+from completing. For the inbound packets themselves to be dropped as well,
+reverse path filtering, rp_filter, needs to be enabled, in which case they
+are tossed at the route lookup before entering any firewall chains.
 
 Blocking is per IP and never per service; ports and protocols are not
 supported and specifying them is an error.
@@ -46,6 +50,17 @@ check verifies the route for each currently banned IP is still present, so
 externally flushed routes are noticed and self-heal can re-add them.
 teardown deletes the route for each banned IP, tolerating already-removed
 routes, and keeps the internal list of bans so re_init can re-add them.
+
+=head1 NOTES
+
+This backend was written going off the iproute2 docs and actual testing
+is needed to double check a few things as the exact behavior is not
+clear.
+
+check looks for a ban's route via C<ip route show E<lt>blocktypeE<gt>
+E<lt>ipE<gt>> and it is not clear whether iproute2 wants that expressed
+as C<type E<lt>blocktypeE<gt>> instead, in which case check would always
+come back false.
 
 =head1 METHODS
 
@@ -723,9 +738,10 @@ sub stop {
 
 =head2 check
 
-Verifies the route for each currently banned IP is still present. Returns a
-true value if they all are and a false value if any are missing. This is the
-equivalent of fail2ban's C<actioncheck>.
+Verifies the route for each currently banned single IP is still present.
+Returns a true value if they all are and a false value if any are missing.
+Routes for banned CIDR ranges are not checked. This is the equivalent of
+fail2ban's C<actioncheck>.
 
     if ( !$backend->check ) {
         $backend->re_init;

@@ -51,6 +51,15 @@ protected must already exist.
 Requires the C<az> CLI in the C<PATH>, logged in with rights to update the
 rule.
 
+=head1 NOTES
+
+This backend was written going off the az CLI docs and actual testing is
+needed to double check a few things as the exact behavior is not clear.
+
+When the ban list goes empty, as at teardown or flush, the rule update
+ends up passing C<--source-address-prefixes> with no value, and whether
+the az CLI accepts that or errors needs checking.
+
 =head1 METHODS
 
 =head2 new

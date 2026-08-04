@@ -42,7 +42,7 @@ our $VERSION = '0.1.0';
             . $Error::Helper::errorFlag . "\n";
     }
 
-    $fw_helper->init;
+    $fw_helper->init_backend;
 
     $fw_helper->ban(ban => '5.6.7.8');
     $fw_helper->ban(ban => '1.2.3.4');
@@ -58,9 +58,15 @@ L<shorewall(8)> and L<shorewall6(8)> commands. IPv4 addresses are handled
 by the C<shorewall> command and IPv6 addresses by the C<shorewall6>
 command.
 
-Dynamic blacklisting is always available, so there is nothing to create at
-init time. Banning an IP is a matter of running C<< shorewall <type> <ip> >>
-and unbanning is a matter of running C<< shorewall allow <ip> >>.
+Dynamic blacklisting is part of Shorewall itself, so there is nothing to
+create at init time. Banning an IP is a matter of running
+C<< shorewall <type> <ip> >> and unbanning is a matter of running
+C<< shorewall allow <ip> >>.
+
+This does require the firewall to actually be in the started state and
+DYNAMIC_BLACKLIST to not have been set to C<No> in L<shorewall.conf(5)>. It
+is enabled by default, so unless it has been explicitly disabled there is
+nothing to configure.
 
 Requires C<shorewall> and, for IPv6 support, C<shorewall6> to be installed
 and in the C<PATH> of the process, which must have sufficient privileges to
@@ -249,13 +255,18 @@ sub _cmd_for {
 
 Initiates the backend.
 
-Dynamic blacklisting is always available, so there is nothing to create.
+Dynamic blacklisting is part of Shorewall itself, so there is nothing to
+create.
+
+Note that for bans to have an effect the firewall must be started and
+DYNAMIC_BLACKLIST must not have been disabled in shorewall.conf. See
+L</DESCRIPTION>.
 
 No arguments are taken.
 
 May called a second time, it will error.
 
-    $fw_helper->init;
+    $backend->init;
 
 =cut
 

@@ -86,7 +86,10 @@ The options hash accepts the following.
         - Default :: drop
 
     - chain :: The direct interface chain to add the rules to.
-            Must match /^[a-zA-Z0-9_\-]+$/.
+            Must match /^[a-zA-Z0-9_\-]+$/. Only the *_direct chains,
+            such as the default, are called automatically by firewalld;
+            a custom chain must already exist and be jumped to from
+            somewhere in the ruleset or the rules will never be evaluated.
         - Default :: INPUT_direct
 
     - kill :: Use conntrack(8) to drop existing connection tracking entries
