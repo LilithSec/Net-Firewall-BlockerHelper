@@ -794,8 +794,11 @@ sub stop {
 
 =head2 check
 
-Runs C<< shorewall show dynamic >>. A zero exit code is treated as healthy.
-This is the equivalent of fail2ban's C<actioncheck>.
+Runs C<< shorewall show dynamic >>, and, when anything IPv6 is currently
+banned, C<< shorewall6 show dynamic >> as well. A zero exit code from each
+is treated as healthy. The IPv6 side is only checked when in use so setups
+without shorewall6 installed are not flagged as unhealthy. This is the
+equivalent of fail2ban's C<actioncheck>.
 
     if ( !$fw_helper->check ) {
         $fw_helper->re_init;
@@ -808,15 +811,31 @@ sub check {
 
 	$self->errorblank;
 
-	my $command = $self->{options}{shorewall_cmd} . ' show dynamic';
+	# the IPv4 side is always checked; the IPv6 side only when something
+	# IPv6 is actually banned, as _cmd_for/_cmd_for_cidr only ever return
+	# shorewall6_cmd for IPv6 items
+	my %cmds = ( $self->{options}{shorewall_cmd} => 1 );
+	foreach my $item ( keys( %{ $self->{banned} } ) ) {
+		$cmds{ $self->_cmd_for($item) } = 1;
+	}
+	foreach my $item ( keys( %{ $self->{banned_cidr} } ) ) {
+		$cmds{ $self->_cmd_for_cidr($item) } = 1;
+	}
+	my @commands = map { $_ . ' show dynamic' } sort( keys(%cmds) );
 
 	if ( $self->{testing} ) {
-		$self->{frontend_obj}->{test_data} = $command;
+		$self->{frontend_obj}->{test_data} = \@commands;
 		return 1;
 	}
 
-	my $output = `$command 2>&1`;
-	return $? == 0 ? 1 : 0;
+	foreach my $command (@commands) {
+		my $output = `$command 2>&1`;
+		if ( $? != 0 ) {
+			return 0;
+		}
+	}
+
+	return 1;
 } ## end sub check
 
 =head2 flush

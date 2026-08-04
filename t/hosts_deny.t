@@ -71,6 +71,10 @@ sub slurp {
 		'default daemon ALL and marker tag from prefix_name'
 	);
 
+	# libwrap only matches IPv6 in the bracketed form
+	$fw->ban( ban => 'DEAD::1' );
+	like( $fw->{test_data}{block}, qr/^ALL : \[dead::1\]$/m, 'IPv6 bans are lowercased and bracketed' );
+
 	my $cidr_blocked = 0;
 	eval { $fw->ban_cidr( ban => '1.2.3.0/24' ); };
 	if ( $fw->{error} == 29 ) { $cidr_blocked = 1; }

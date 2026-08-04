@@ -48,8 +48,9 @@ The backend owns a single marked region of the file delimited by
 
 Everything outside that region is preserved untouched, so hand maintained
 rules and other instances (with a different prefix/name) coexist. Each ban
-is rendered as a C<< <daemon> : <ip> >> line. No reload is needed as libwrap
-reads the file on each connection.
+is rendered as a C<< <daemon> : <ip> >> line, with IPv6 addresses bracketed,
+C<< <daemon> : [<ip>] >>, as that is the only IPv6 form libwrap matches. No
+reload is needed as libwrap reads the file on each connection.
 
 =head1 METHODS
 
@@ -170,6 +171,16 @@ sub _markers {
 	return ( '# BEGIN ' . $tag, '# END ' . $tag );
 }
 
+# Internal helper. Renders the hosts.deny line for the passed IP. IPv6
+# addresses are bracketed as libwrap only matches the [ip] form for those;
+# bare IPv6 patterns are silently never matched.
+sub _render_entry {
+	my ( $self, $ip ) = @_;
+
+	my $addr = ( $ip =~ /:/ ) ? '[' . $ip . ']' : $ip;
+	return $self->{options}{daemon} . ' : ' . $addr;
+}
+
 # Internal helper. Builds this instance's marked region from the current ban
 # list. Returns an empty string when there is nothing banned so no stray
 # markers are left in the file.
@@ -182,7 +193,7 @@ sub _render_block {
 	my ( $begin, $end ) = $self->_markers;
 	my @lines = ($begin);
 	foreach my $ip (@ips) {
-		push( @lines, $self->{options}{daemon} . ' : ' . $ip );
+		push( @lines, $self->_render_entry($ip) );
 	}
 	push( @lines, $end );
 
@@ -227,11 +238,14 @@ sub _read {
 sub _apply {
 	my ( $self, $error_flag ) = @_;
 
-	my $outside = $self->_strip_block( $self->_read );
+	my $current = $self->_read;
+	my $outside = $self->_strip_block($current);
 	my $block   = $self->_render_block;
 
-	# keep a single trailing newline between preserved content and our block
-	$outside =~ s/\n*\z/\n/ if ( $outside ne '' );
+	# make sure the preserved content ends with a newline so our block does
+	# not get glued onto its last line; beyond that it is left byte for byte
+	# as is
+	$outside .= "\n" if ( $outside ne '' && $outside !~ /\n\z/ );
 	my $content = $outside . $block;
 
 	if ( $self->{testing} ) {
@@ -242,6 +256,9 @@ sub _apply {
 		};
 		return;
 	}
+
+	# nothing would change, so leave the file untouched
+	return if ( $content eq $current );
 
 	my $fh;
 	if ( !open( $fh, '>', $self->{options}{file} ) ) {
@@ -497,7 +514,7 @@ sub check {
 	return 0 if ( index( $content, $begin ) < 0 );
 
 	foreach my $ip (@ips) {
-		return 0 if ( index( $content, $self->{options}{daemon} . ' : ' . $ip ) < 0 );
+		return 0 if ( index( $content, $self->_render_entry($ip) ) < 0 );
 	}
 
 	return 1;
