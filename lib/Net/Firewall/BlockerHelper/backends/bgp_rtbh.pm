@@ -46,10 +46,12 @@ BLACKHOLE community (C<65535:666>, RFC 7999). Upstream routers that honor it
 then drop the traffic, moving the drop off this host and, with a transit
 provider that accepts blackhole announcements, off the local link entirely.
 
-Announcements are driven through one of two BGP daemons, selected with the
-C<driver> option: ExaBGP's C<exabgpcli> (the default) or C<gobgp>. Either
-talks to a running daemon that holds the BGP session(s) to the routers; this
-backend does not manage that session, it only announces and withdraws routes.
+Announcements are driven through one of three drivers, selected with the
+C<driver> option: ExaBGP's C<exabgpcli> (the default), C<gobgp>, or C<frr>.
+The exabgp and gobgp drivers talk to a running daemon that holds the BGP
+session(s) to the routers, while the frr driver injects a blackhole static
+route via C<vtysh> for a running bgpd to redistribute. This backend does not
+manage that session, it only announces and withdraws routes.
 
 Whether the announced prefix blackholes the traffic's B<source> or
 B<destination> depends on the receiving router: destination based RTBH drops
@@ -57,7 +59,9 @@ traffic toward the prefix, while source based RTBH (loose uRPF plus the
 blackhole community) drops traffic B<from> it. As this tool bans attacker
 source addresses, a source based RTBH setup is the usual pairing.
 
-Requires C<exabgpcli> in the C<PATH> and a running, configured C<exabgp>.
+Requires the configured driver's binary in the C<PATH> (C<exabgpcli>,
+C<gobgp>, or C<vtysh>) and a running, configured daemon behind it (C<exabgp>,
+C<gobgpd>, or FRR's C<bgpd>).
 
 =head1 METHODS
 

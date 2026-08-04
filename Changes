@@ -1,6 +1,15 @@
 Revision history for Net-Firewall-BlockerHelper
 
 0.1.0   2026-07-13
+        - juniper_srx: also replace '/' in address object names so CIDR bans
+          produce valid Junos identifiers.
+        - dns_rpz: validate the server, ttl, and nsupdate options before they
+          are embedded in the shell command. New errors: serverInvalid (37),
+          ttlInvalid (38), nsupdateInvalid (39).
+        - cloud_armor: roll a failed ban/ban_cidr back out of the local ban
+          set so it can not wedge later updates. Document the Cloud Armor
+          per-rule source range limit.
+        - bgp_rtbh: doc fixes, the description now covers all three drivers.
         - Add CIDR range ban/unban support via new methods ban_cidr, unban_cidr,
           and list_cidr on the frontend and every backend. The frontend
           validates the CIDR (IPv4 /0-32, IPv6 /0-128) and dispatches only to

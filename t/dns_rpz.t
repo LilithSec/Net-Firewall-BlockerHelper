@@ -82,4 +82,23 @@ for my $missing (qw(zone keyfile)) {
 	ok( $died, 'an invalid trigger is fatal' );
 }
 
+# server, ttl, and nsupdate are embedded in the shell command, so bad values are fatal
+for my $bad (
+	[ server   => "10.0.0.1' ; reboot ;'" ],
+	[ ttl      => '60; reboot' ],
+	[ nsupdate => "nsupdate' ; reboot ;'" ],
+	)
+{
+	my $died = 0;
+	eval {
+		my $fw = Net::Firewall::BlockerHelper->new(
+			backend => 'dns_rpz', name => 'r', testing => 1,
+			options => { zone => 'z', keyfile => '/k', $bad->[0] => $bad->[1] },
+		);
+		$fw->init_backend;
+	};
+	$died = 1 if ($@);
+	ok( $died, 'an invalid ' . $bad->[0] . ' is fatal' );
+}
+
 done_testing();

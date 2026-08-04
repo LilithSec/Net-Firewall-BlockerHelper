@@ -246,14 +246,14 @@ sub _url {
 	return 'https://' . $self->{options}{host} . '/rpc';
 }
 
-# Internal helper. Returns the address book object name used for the passed IP,
-# built as <prefix>_<name>_<ip> with dots and colons replaced by '-' so it
-# is a valid Junos identifier.
+# Internal helper. Returns the address book object name used for the passed IP
+# or CIDR, built as <prefix>_<name>_<ip> with dots, colons, and slashes
+# replaced by '-' so it is a valid Junos identifier.
 sub _obj_name {
 	my ( $self, $ip ) = @_;
 
 	my $obj = $self->{prefix} . '_' . $self->{name} . '_' . $ip;
-	$obj =~ s/[.:]/-/g;
+	$obj =~ s/[.:\/]/-/g;
 
 	return $obj;
 }

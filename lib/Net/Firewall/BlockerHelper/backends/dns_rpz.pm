@@ -130,6 +130,9 @@ sub new {
 				34 => 'cidrItemNotCidr',
 				35 => 'cidrNotSupported',
 				36 => 'listCidrFailed',
+				37 => 'serverInvalid',
+				38 => 'ttlInvalid',
+				39 => 'nsupdateInvalid',
 			},
 			fatal_flags      => {},
 			perror_not_fatal => 0,
@@ -203,9 +206,41 @@ sub new {
 		$self->warn;
 	} ## end if ( !defined( $self->{options}{keyfile} )...)
 
-	$self->{options}{trigger}  = 'client-ip' if ( !defined( $self->{options}{trigger} ) );
-	$self->{options}{ttl}      = 60          if ( !defined( $self->{options}{ttl} ) );
-	$self->{options}{nsupdate} = 'nsupdate'  if ( !defined( $self->{options}{nsupdate} ) );
+	$self->{options}{trigger} = 'client-ip' if ( !defined( $self->{options}{trigger} ) );
+
+	# the following are embedded in the shell command _nsupdate_command builds,
+	# so limit each to characters safe inside its single quoted printf string
+
+	# '' is treated the same as undef when the command is built
+	if (   defined( $self->{options}{server} )
+		&& $self->{options}{server} ne ''
+		&& $self->{options}{server} !~ /^[a-zA-Z0-9.:\-]+$/ )
+	{
+		$self->{perror} = 1;
+		$self->{error}  = 37;
+		$self->{errorString}
+			= 'the option server, "' . $self->{options}{server} . '", does not match /^[a-zA-Z0-9.:\-]+$/';
+		$self->warn;
+	}
+
+	if ( !defined( $self->{options}{ttl} ) ) {
+		$self->{options}{ttl} = 60;
+	} elsif ( $self->{options}{ttl} !~ /^[0-9]+$/ ) {
+		$self->{perror}      = 1;
+		$self->{error}       = 38;
+		$self->{errorString} = 'the option ttl, "' . $self->{options}{ttl} . '", is not an int';
+		$self->warn;
+	}
+
+	if ( !defined( $self->{options}{nsupdate} ) ) {
+		$self->{options}{nsupdate} = 'nsupdate';
+	} elsif ( $self->{options}{nsupdate} !~ /^[a-zA-Z0-9.\/_\-]+$/ ) {
+		$self->{perror} = 1;
+		$self->{error}  = 39;
+		$self->{errorString}
+			= 'the option nsupdate, "' . $self->{options}{nsupdate} . '", does not match /^[a-zA-Z0-9.\/_\-]+$/';
+		$self->warn;
+	}
 
 	if ( $self->{options}{trigger} ne 'client-ip' && $self->{options}{trigger} ne 'ip' ) {
 		$self->{perror}      = 1;
@@ -850,6 +885,18 @@ The backend does not support CIDR bans.
 =head2 36, listCidrFailed
 
 Failed to get a list of CIDR bans.
+
+=head2 37, serverInvalid
+
+The option server does not match /^[a-zA-Z0-9.:\-]+$/.
+
+=head2 38, ttlInvalid
+
+The option ttl is not an int.
+
+=head2 39, nsupdateInvalid
+
+The option nsupdate does not match /^[a-zA-Z0-9.\/_\-]+$/.
 
 =head1 AUTHOR
 

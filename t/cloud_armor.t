@@ -61,6 +61,31 @@ BEGIN {
 		'priority and project honored' );
 }
 
+# a failed ban is rolled back out of the ban set
+{
+	my $fw = Net::Firewall::BlockerHelper->new(
+		backend   => 'cloud_armor', name => 'ssh', testing => 1, self_heal => 0,
+		options   => { policy => 'p', gcloud_cmd => 'false' },
+	);
+	$fw->init_backend;
+	$fw->ban( ban => '1.2.3.4' );
+
+	# drop out of testing mode so ban runs gcloud_cmd, which always fails
+	$fw->{backend_obj}{testing} = 0;
+	eval { $fw->ban( ban => '5.6.7.8' ); };
+	ok( $@, 'a failed ban is fatal' );
+	ok( !$fw->{backend_obj}{banned}{'5.6.7.8'}, 'the failed ban is not left in the ban set' );
+
+	eval { $fw->ban_cidr( ban => '10.0.0.0/8' ); };
+	ok( $@, 'a failed ban_cidr is fatal' );
+	ok( !$fw->{backend_obj}{banned_cidr}{'10.0.0.0/8'}, 'the failed ban_cidr is not left in the ban set' );
+
+	$fw->{backend_obj}{testing} = 1;
+	$fw->ban( ban => '9.9.9.9' );
+	unlike( $fw->{test_data}, qr{5\.6\.7\.8}, 'later bans do not re-render the failed range' );
+	like( $fw->{test_data}, qr{1\.2\.3\.4/32}, 'earlier successful bans are still rendered' );
+}
+
 # policy is required
 {
 	my $died = 0;

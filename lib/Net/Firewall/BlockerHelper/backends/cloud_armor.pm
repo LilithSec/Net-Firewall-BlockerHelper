@@ -44,6 +44,13 @@ C<gcloud> CLI. The full set of currently banned IPs is rendered into the rule
 on every change, so ban/unban are idempotent. Both IPv4 and IPv6 share the one
 rule.
 
+Cloud Armor caps the source ranges of a rule, ten per match condition at the
+time of writing, so bans past that limit will fail. A failed ban is rolled
+back out of the local ban list so it can not wedge later bans by being
+re-rendered into every subsequent update. A failed unban is not rolled back;
+the range is already gone locally and the next successful update converges
+the rule.
+
 This backend manages only the rule's source ranges. The security policy, the
 deny rule at the given priority, and the policy's attachment to a backend
 service or load balancer must already exist.
@@ -224,10 +231,12 @@ sub _describe_command {
 # Internal helper. Runs a command unless testing, raising the passed error flag
 # on a non-zero exit.
 sub _run {
-	my ( $self, $command, $error_flag ) = @_;
+	my ( $self, $command, $error_flag, $rollback ) = @_;
 
 	my $output = `$command 2>&1`;
 	if ( $? != 0 ) {
+		# errors are fatal, so any state rollback has to happen before warn
+		$rollback->() if ( defined($rollback) );
 		$self->{error}       = $error_flag;
 		$self->{errorString} = 'command "' . $command . '" failed... ' . $output;
 		$self->warn;
@@ -324,7 +333,7 @@ sub ban {
 	if ( $self->{testing} ) {
 		$self->{frontend_obj}->{test_data} = $command;
 	} else {
-		$self->_run( $command, 13 );
+		$self->_run( $command, 13, sub { delete( $self->{banned}{ $opts{ban} } ) } );
 	}
 } ## end sub ban
 
@@ -464,7 +473,7 @@ sub ban_cidr {
 	if ( $self->{testing} ) {
 		$self->{frontend_obj}->{test_data} = $command;
 	} else {
-		$self->_run( $command, 31 );
+		$self->_run( $command, 31, sub { delete( $self->{banned_cidr}{ $opts{ban} } ) } );
 	}
 } ## end sub ban_cidr
 
