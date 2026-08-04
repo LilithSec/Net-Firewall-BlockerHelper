@@ -129,7 +129,7 @@ Revision history for Net-Firewall-BlockerHelper
           rules, for hosts where raw iptables calls would fight firewalld.
         - Add a ufw backend using per-IP prepend/delete rules, with optional
           connection killing via ss or conntrack.
-        - Add a route backend blocking whole IPs via iproute2 null routes
+        - Add a linux_ip_route backend blocking whole IPs via iproute2 null routes
           (unreachable/blackhole/prohibit); works with no firewall at all.
         - Add a npf backend for NetBSD, managing IPs in a npf table declared
           in npf.conf.

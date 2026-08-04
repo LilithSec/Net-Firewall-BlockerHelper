@@ -11,7 +11,7 @@ Currently included local backends are...
 - nftables
 - npf
 - pf
-- route (null/blackhole routes via iproute2)
+- linux_ip_route (null/blackhole routes via iproute2)
 - shorewall (dynamic blacklist via shorewall/shorewall6)
 - ufw
 - xdp (XDP/eBPF packet drops via xdp-filter from xdp-tools)

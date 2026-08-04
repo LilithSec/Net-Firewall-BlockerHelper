@@ -6,11 +6,11 @@ use Test::More;
 
 BEGIN {
 	use_ok('Net::Firewall::BlockerHelper')                  || print "Bail out!\n";
-	use_ok('Net::Firewall::BlockerHelper::backends::route') || print "Bail out!\n";
+	use_ok('Net::Firewall::BlockerHelper::backends::linux_ip_route') || print "Bail out!\n";
 }
 
 my $fw = Net::Firewall::BlockerHelper->new(
-	backend => 'route',
+	backend => 'linux_ip_route',
 	name    => 'ssh',
 	testing => 1,
 );
@@ -64,7 +64,7 @@ is( scalar( $fw->list ), 0, 'flush empties the ban list' );
 # --- blocktype option ----------------------------------------------------------
 {
 	my $fw2 = Net::Firewall::BlockerHelper->new(
-		backend => 'route',
+		backend => 'linux_ip_route',
 		name    => 'ssh',
 		options => { blocktype => 'blackhole' },
 		testing => 1,
@@ -77,15 +77,15 @@ is( scalar( $fw->list ), 0, 'flush empties the ban list' );
 # --- validation, on the backend directly as that is where these are checked ------
 {
 	local $@;
-	eval { Net::Firewall::BlockerHelper::backends::route->new( name => 'ssh', ports => ['22'] ); };
+	eval { Net::Firewall::BlockerHelper::backends::linux_ip_route->new( name => 'ssh', ports => ['22'] ); };
 	ok( $@, 'ports error as unsupported' );
 	is( $Error::Helper::error, 26, 'ports raise error 26' );
 
-	eval { Net::Firewall::BlockerHelper::backends::route->new( name => 'ssh', protocols => ['tcp'] ); };
+	eval { Net::Firewall::BlockerHelper::backends::linux_ip_route->new( name => 'ssh', protocols => ['tcp'] ); };
 	ok( $@, 'protocols error as unsupported' );
 	is( $Error::Helper::error, 27, 'protocols raise error 27' );
 
-	eval { Net::Firewall::BlockerHelper::backends::route->new( name => 'ssh', options => { blocktype => 'derp' } ); };
+	eval { Net::Firewall::BlockerHelper::backends::linux_ip_route->new( name => 'ssh', options => { blocktype => 'derp' } ); };
 	ok( $@, 'an invalid blocktype errors' );
 }
 

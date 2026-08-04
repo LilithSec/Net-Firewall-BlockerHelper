@@ -28,7 +28,7 @@ lib/Net/Firewall/BlockerHelper/backends/opnsense.pm
 lib/Net/Firewall/BlockerHelper/backends/panos.pm
 lib/Net/Firewall/BlockerHelper/backends/pf.pm
 lib/Net/Firewall/BlockerHelper/backends/pfsense.pm
-lib/Net/Firewall/BlockerHelper/backends/route.pm
+lib/Net/Firewall/BlockerHelper/backends/linux_ip_route.pm
 lib/Net/Firewall/BlockerHelper/backends/routeros.pm
 lib/Net/Firewall/BlockerHelper/backends/routeros_api.pm
 lib/Net/Firewall/BlockerHelper/backends/shell.pm
@@ -85,7 +85,7 @@ t/panos.t
 t/pf.t
 t/pfsense.t
 t/ports_proto.t
-t/route.t
+t/linux_ip_route.t
 t/routeros.t
 t/routeros_api.t
 t/shorewall.t

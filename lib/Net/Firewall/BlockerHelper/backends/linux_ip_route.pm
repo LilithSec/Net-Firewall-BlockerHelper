@@ -1,4 +1,4 @@
-package Net::Firewall::BlockerHelper::backends::route;
+package Net::Firewall::BlockerHelper::backends::linux_ip_route;
 
 use 5.006;
 use strict;
@@ -9,7 +9,7 @@ use Regexp::IPv6 qw($IPv6_re);
 
 =head1 NAME
 
-Net::Firewall::BlockerHelper::backends::route - Blackhole route backend for Net::Firewall::BlockerHelper.
+Net::Firewall::BlockerHelper::backends::linux_ip_route - Blackhole route backend for Net::Firewall::BlockerHelper.
 
 =head1 VERSION
 
@@ -24,7 +24,7 @@ our $VERSION = '0.1.0';
     use Net::Firewall::BlockerHelper;
 
     my $fw_helper = Net::Firewall::BlockerHelper->new(
-            backend => 'route',
+            backend => 'linux_ip_route',
             name => 'ssh',
         );
 
