@@ -29,6 +29,7 @@ which is only loaded if they are used.
 - fortigate (Fortinet FortiGate address group via the FortiOS REST API)
 - juniper_srx (Juniper SRX global address-book via the Junos REST API)
 - netscaler
+- opnsense (OPNsense firewall alias via the os-firewall alias_util API)
 - panos (Palo Alto Networks PAN-OS dynamic address group via the User-ID XML API)
 - pfsense (pfSense firewall alias via the pfSense-API package)
 - routeros_api (MikroTik RouterOS address-list via the RouterOS 7 REST API)
@@ -47,7 +48,6 @@ The following other remote backends are available.
   gobgp, or FRR/vtysh)
 - dns_rpz (DNS Response Policy Zone rpz-client-ip/rpz-ip triggers via nsupdate)
 - nsupdate (DNS based blocklist via BIND dynamic updates)
-- opnsense (firewall alias via the OPNsense REST API, driven with curl)
 - routeros (MikroTik RouterOS address-list, driven over ssh)
 
 The following generic backends are available.

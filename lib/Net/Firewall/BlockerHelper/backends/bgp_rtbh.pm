@@ -285,15 +285,16 @@ sub _route_command {
 		return $cmd;
 	} ## end if ( $self->{options}{driver...})
 
-	# exabgp driver
+	# exabgp driver; the command is passed single quoted as the braces and
+	# semicolons of the flow syntax are shell syntax when left bare
 	if ($is_flowspec) {
 		# exabgpcli 'announce|withdraw flow route { match { source <prefix>; } then { discard; } }'
 		return
-			  $self->{options}{exabgpcli_cmd} . ' '
+			  $self->{options}{exabgpcli_cmd} . " '"
 			. $verb
 			. ' flow route { match { source '
 			. $prefix
-			. '; } then { discard; } }';
+			. "; } then { discard; } }'";
 	} ## end if ($is_flowspec)
 
 	# exabgp rtbh: exabgpcli 'announce|withdraw route <prefix> next-hop .. community [..]'
@@ -306,7 +307,8 @@ sub _route_command {
 		. ' community [' . $self->{options}{community} . ']';
 	$route .= ' ' . $extra if ( $extra ne '' );
 
-	return $self->{options}{exabgpcli_cmd} . ' ' . $route;
+	# single quoted so the community's [..] can not glob against the cwd
+	return $self->{options}{exabgpcli_cmd} . " '" . $route . "'";
 } ## end sub _route_command
 
 # Internal helper. Like _route_command but for a CIDR range. The passed
@@ -362,15 +364,16 @@ sub _route_command_cidr {
 		return $cmd;
 	} ## end if ( $self->{options}{driver...})
 
-	# exabgp driver
+	# exabgp driver; the command is passed single quoted as the braces and
+	# semicolons of the flow syntax are shell syntax when left bare
 	if ($is_flowspec) {
 		# exabgpcli 'announce|withdraw flow route { match { source <prefix>; } then { discard; } }'
 		return
-			  $self->{options}{exabgpcli_cmd} . ' '
+			  $self->{options}{exabgpcli_cmd} . " '"
 			. $verb
 			. ' flow route { match { source '
 			. $prefix
-			. '; } then { discard; } }';
+			. "; } then { discard; } }'";
 	} ## end if ($is_flowspec)
 
 	# exabgp rtbh: exabgpcli 'announce|withdraw route <prefix> next-hop .. community [..]'
@@ -383,7 +386,8 @@ sub _route_command_cidr {
 		. ' community [' . $self->{options}{community} . ']';
 	$route .= ' ' . $extra if ( $extra ne '' );
 
-	return $self->{options}{exabgpcli_cmd} . ' ' . $route;
+	# single quoted so the community's [..] can not glob against the cwd
+	return $self->{options}{exabgpcli_cmd} . " '" . $route . "'";
 } ## end sub _route_command_cidr
 
 # Internal helper. Returns the driver-appropriate command used by check to

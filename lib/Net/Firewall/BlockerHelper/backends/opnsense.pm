@@ -59,7 +59,7 @@ our $VERSION = '0.1.0';
 =head1 DESCRIPTION
 
 This backend blocks IPs by adding them to an OPNsense firewall alias via
-the C<os-firewall> C<alias_util> REST API, talked to via L<curl(1)>.
+the C<os-firewall> C<alias_util> REST API, talked to via L<LWP::UserAgent>.
 
 A single alias holds all of the banned IPs. Both IPv4 and IPv6 addresses
 are added to the same alias as OPNsense host/network aliases are family
@@ -70,7 +70,9 @@ web UI (Firewall -> Aliases) and referenced by a firewall rule that does
 the actual blocking. This backend only manages the contents of the alias,
 not the alias itself nor the rule referencing it.
 
-Requires C<curl> to be installed and in the C<PATH> of the process.
+L<LWP::UserAgent> is only loaded at run time, so it is only required if
+this backend is actually used. For https, L<LWP::Protocol::https> must be
+present as well.
 
 =head1 METHODS
 
@@ -114,11 +116,11 @@ The options hash accepts the following.
             already exist in OPNsense.
         - Default :: <prefix>_<name>
 
-    - curl_cmd :: The curl binary plus any base arguments.
-        - Default :: curl -s
+    - timeout :: HTTP timeout in seconds.
+        - Default :: 30
 
-    - insecure :: If true, '-k' is added to curl so self-signed certs are
-            accepted.
+    - insecure :: If true, certificate verification is disabled so
+            self-signed certs are accepted.
         - Default :: 0
 
     - scheme :: The scheme used when building the URL, either 'https' or
@@ -190,7 +192,7 @@ sub new {
 			perror_not_fatal => 0,
 		},
 		options => {
-			curl_cmd => 'curl -s',
+			timeout  => 30,
 			insecure => 0,
 			scheme   => 'https',
 		},
@@ -238,8 +240,13 @@ sub new {
 	}
 
 	# fill in the defaults for anything not passed
-	if ( !defined( $self->{options}{curl_cmd} ) || $self->{options}{curl_cmd} eq '' ) {
-		$self->{options}{curl_cmd} = 'curl -s';
+	if ( !defined( $self->{options}{timeout} ) ) {
+		$self->{options}{timeout} = 30;
+	} elsif ( $self->{options}{timeout} !~ /^[0-9]+$/ ) {
+		$self->{perror}      = 1;
+		$self->{error}       = 12;
+		$self->{errorString} = 'the option timeout, "' . $self->{options}{timeout} . '", is not an int';
+		$self->warn;
 	}
 	if ( !defined( $self->{options}{insecure} ) ) {
 		$self->{options}{insecure} = 0;
@@ -272,52 +279,69 @@ sub new {
 	return $self;
 } ## end sub new
 
-# Internal helper. Builds and returns the curl command string used to talk
-# to the OPNsense API.
-#
-#     my $command = $self->_curl( 'alias_util/list/' . $alias );
-#     my $command = $self->_curl( 'alias_util/add/' . $alias, '{"address":"1.2.3.4"}' );
-#
-# The first argument is the method path appended to
-# <scheme>://<host>/api/firewall/. The second argument, if defined,
-# is passed as the JSON body via '-d'.
-sub _curl {
-	my ( $self, $method_path, $data ) = @_;
+# Internal helper. Returns a canonical JSON::PP encoder/decoder.
+sub _json {
+	my ($self) = @_;
 
-	my $command = $self->{options}{curl_cmd};
+	require JSON::PP;
+	return JSON::PP->new->canonical->utf8;
+}
 
-	if ( $self->{options}{insecure} ) {
-		$command .= ' -k';
+# Internal helper. Returns the URL for the passed method path, appended to
+# <scheme>://<host>/api/firewall/.
+#
+#     my $url = $self->_url( 'alias_util/list/' . $alias );
+sub _url {
+	my ( $self, $method_path ) = @_;
+
+	return $self->{options}{scheme} . '://' . $self->{options}{host} . '/api/firewall/' . $method_path;
+}
+
+# Internal helper. Performs a HTTP request via LWP::UserAgent, authenticated
+# via basic auth with the key/secret, returning the decoded JSON on success
+# and dying with a explanation on any HTTP level failure. Never called in
+# testing mode.
+sub _request {
+	my ( $self, $method, $url, $body ) = @_;
+
+	if ( !defined( $self->{ua} ) ) {
+		local $@;
+		eval {
+			require LWP::UserAgent;
+			my %ua_opts = (
+				agent   => 'Net::Firewall::BlockerHelper/' . $VERSION,
+				timeout => $self->{options}{timeout},
+			);
+			if ( $self->{options}{insecure} ) {
+				$ua_opts{ssl_opts} = { verify_hostname => 0, SSL_verify_mode => 0 };
+			}
+			$self->{ua} = LWP::UserAgent->new(%ua_opts);
+			1;
+		} or die( 'failed to load LWP::UserAgent, which the opnsense backend requires... ' . $@ );
+	} ## end if ( !defined( $self->{ua...}))
+
+	require HTTP::Request;
+	my $request = HTTP::Request->new( $method, $url, [ 'Content-Type' => 'application/json' ], $body );
+	$request->authorization_basic( $self->{options}{key}, $self->{options}{secret} );
+
+	my $response = $self->{ua}->request($request);
+
+	if ( !$response->is_success ) {
+		die( $method . ' ' . $url . ' failed... HTTP status... ' . $response->status_line );
 	}
 
-	$command
-		.= " -u '"
-		. $self->{options}{key} . ':'
-		. $self->{options}{secret}
-		. "' -H 'Content-Type: application/json'";
+	my $decoded;
+	local $@;
+	eval { $decoded = $self->_json->decode( $response->decoded_content ); };
 
-	if ( defined($data) ) {
-		$command .= " -d '" . $data . "'";
-	}
-
-	$command
-		.= " '"
-		. $self->{options}{scheme}
-		. '://'
-		. $self->{options}{host}
-		. '/api/firewall/'
-		. $method_path . "'";
-
-	return $command;
-} ## end sub _curl
+	return $decoded;
+} ## end sub _request
 
 =head2 init
 
-Initiates the backend. This lists the alias via the API, with a zero curl
-exit code treated as success. As the default curl_cmd of C<curl -s> exits
-zero on HTTP level errors, this catches connection level problems rather
-than the likes of a missing alias or bad credentials; add C<-f> to
-curl_cmd if those should fail it as well.
+Initiates the backend. This lists the alias via the API, with any
+connection or HTTP level failure, bad credentials included, raising an
+error.
 
 No arguments are taken.
 
@@ -338,17 +362,17 @@ sub init {
 		$self->warn;
 	}
 
-	my $command = $self->_curl( 'alias_util/list/' . $self->{options}{alias} );
+	my $url = $self->_url( 'alias_util/list/' . $self->{options}{alias} );
 
 	if ( $self->{testing} ) {
-		$self->{frontend_obj}->{test_data} = [$command];
+		$self->{frontend_obj}->{test_data} = [ { method => 'GET', url => $url } ];
 	} else {
-		my $output = `$command 2>&1`;
-		if ( $? != 0 ) {
+		local $@;
+		eval { $self->_request( 'GET', $url ); 1; } or do {
 			$self->{error}       = 12;
-			$self->{errorString} = 'init failed... command "' . $command . '" resulted in... ' . $output;
+			$self->{errorString} = 'init failed... listing the alias failed... ' . $@;
 			$self->warn;
-		}
+		};
 	}
 
 	$self->{inited} = 1;
@@ -358,7 +382,7 @@ sub init {
 
 Bans an IP. The value of ban is validated as being a IPv4 or IPv6 address
 and lowercased, then added to the alias via a POST to the
-C<alias_util/add> API endpoint using curl. Banning an already banned IP is
+C<alias_util/add> API endpoint. Banning an already banned IP is
 a noop.
 
     $backend->ban(ban => $ip);
@@ -406,17 +430,19 @@ sub ban {
 		return;
 	}
 
-	my $command = $self->_curl( 'alias_util/add/' . $self->{options}{alias}, '{"address":"' . $opts{ban} . '"}' );
+	my $url  = $self->_url( 'alias_util/add/' . $self->{options}{alias} );
+	my $body = $self->_json->encode( { address => $opts{ban} } );
 
 	if ( $self->{testing} ) {
-		$self->{frontend_obj}->{test_data} = [$command];
+		$self->{frontend_obj}->{test_data} = [ { method => 'POST', url => $url, content => $body } ];
 	} else {
-		my $output = `$command 2>&1`;
-		if ( $? != 0 ) {
+		local $@;
+		eval { $self->_request( 'POST', $url, $body ); 1; } or do {
 			$self->{error}       = 13;
-			$self->{errorString} = 'ban failed... command "' . $command . '" resulted in... ' . $output;
+			$self->{errorString} = 'banning "' . $opts{ban} . '" failed... ' . $@;
 			$self->warn;
-		}
+			return;
+		};
 	}
 
 	$self->{banned}{ $opts{ban} } = 1;
@@ -426,7 +452,7 @@ sub ban {
 
 Unbans an IP. The value of ban is validated as being a IPv4 or IPv6 address
 and lowercased, then removed from the alias via a POST to the
-C<alias_util/delete> API endpoint using curl. Unbanning an IP that is not
+C<alias_util/delete> API endpoint. Unbanning an IP that is not
 banned is a noop.
 
     $backend->unban(ban => $ip);
@@ -474,17 +500,19 @@ sub unban {
 		return;
 	}
 
-	my $command = $self->_curl( 'alias_util/delete/' . $self->{options}{alias}, '{"address":"' . $opts{ban} . '"}' );
+	my $url  = $self->_url( 'alias_util/delete/' . $self->{options}{alias} );
+	my $body = $self->_json->encode( { address => $opts{ban} } );
 
 	if ( $self->{testing} ) {
-		$self->{frontend_obj}->{test_data} = [$command];
+		$self->{frontend_obj}->{test_data} = [ { method => 'POST', url => $url, content => $body } ];
 	} else {
-		my $output = `$command 2>&1`;
-		if ( $? != 0 ) {
+		local $@;
+		eval { $self->_request( 'POST', $url, $body ); 1; } or do {
 			$self->{error}       = 14;
-			$self->{errorString} = 'unban failed... command "' . $command . '" resulted in... ' . $output;
+			$self->{errorString} = 'unbanning "' . $opts{ban} . '" failed... ' . $@;
 			$self->warn;
-		}
+			return;
+		};
 	}
 
 	delete( $self->{banned}{ $opts{ban} } );
@@ -558,17 +586,19 @@ sub ban_cidr {
 		return;
 	}
 
-	my $command = $self->_curl( 'alias_util/add/' . $self->{options}{alias}, '{"address":"' . $opts{ban} . '"}' );
+	my $url  = $self->_url( 'alias_util/add/' . $self->{options}{alias} );
+	my $body = $self->_json->encode( { address => $opts{ban} } );
 
 	if ( $self->{testing} ) {
-		$self->{frontend_obj}->{test_data} = [$command];
+		$self->{frontend_obj}->{test_data} = [ { method => 'POST', url => $url, content => $body } ];
 	} else {
-		my $output = `$command 2>&1`;
-		if ( $? != 0 ) {
+		local $@;
+		eval { $self->_request( 'POST', $url, $body ); 1; } or do {
 			$self->{error}       = 33;
-			$self->{errorString} = 'ban failed... command "' . $command . '" resulted in... ' . $output;
+			$self->{errorString} = 'banning "' . $opts{ban} . '" failed... ' . $@;
 			$self->warn;
-		}
+			return;
+		};
 	}
 
 	$self->{banned_cidr}{ $opts{ban} } = 1;
@@ -624,17 +654,19 @@ sub unban_cidr {
 		return;
 	}
 
-	my $command = $self->_curl( 'alias_util/delete/' . $self->{options}{alias}, '{"address":"' . $opts{ban} . '"}' );
+	my $url  = $self->_url( 'alias_util/delete/' . $self->{options}{alias} );
+	my $body = $self->_json->encode( { address => $opts{ban} } );
 
 	if ( $self->{testing} ) {
-		$self->{frontend_obj}->{test_data} = [$command];
+		$self->{frontend_obj}->{test_data} = [ { method => 'POST', url => $url, content => $body } ];
 	} else {
-		my $output = `$command 2>&1`;
-		if ( $? != 0 ) {
+		local $@;
+		eval { $self->_request( 'POST', $url, $body ); 1; } or do {
 			$self->{error}       = 34;
-			$self->{errorString} = 'unban failed... command "' . $command . '" resulted in... ' . $output;
+			$self->{errorString} = 'unbanning "' . $opts{ban} . '" failed... ' . $@;
 			$self->warn;
-		}
+			return;
+		};
 	}
 
 	delete( $self->{banned_cidr}{ $opts{ban} } );
@@ -717,17 +749,18 @@ sub re_init {
 
 	my @re_init_test_data;
 	foreach my $item (@to_re_ban) {
-		my $command = $self->_curl( 'alias_util/add/' . $self->{options}{alias}, '{"address":"' . $item . '"}' );
+		my $url  = $self->_url( 'alias_util/add/' . $self->{options}{alias} );
+		my $body = $self->_json->encode( { address => $item } );
 
 		if ( $self->{testing} ) {
-			push( @re_init_test_data, $command );
+			push( @re_init_test_data, { method => 'POST', url => $url, content => $body } );
 		} else {
-			my $output = `$command 2>&1`;
-			if ( $? != 0 ) {
+			local $@;
+			eval { $self->_request( 'POST', $url, $body ); 1; } or do {
 				$self->{error}       = 13;
-				$self->{errorString} = 'ban failed... command "' . $command . '" resulted in... ' . $output;
+				$self->{errorString} = 'banning "' . $item . '" failed... ' . $@;
 				$self->warn;
-			}
+			};
 		}
 	} ## end foreach my $item (@to_re_ban)
 
@@ -756,17 +789,17 @@ sub teardown {
 
 	$self->{inited} = 0;
 
-	my $command = $self->_curl( 'alias_util/flush/' . $self->{options}{alias}, '{}' );
+	my $url = $self->_url( 'alias_util/flush/' . $self->{options}{alias} );
 
 	if ( $self->{testing} ) {
-		$self->{frontend_obj}->{test_data} = [$command];
+		$self->{frontend_obj}->{test_data} = [ { method => 'POST', url => $url, content => '{}' } ];
 	} else {
-		my $output = `$command 2>&1`;
-		if ( $? != 0 ) {
+		local $@;
+		eval { $self->_request( 'POST', $url, '{}' ); 1; } or do {
 			$self->{error}       = 17;
-			$self->{errorString} = 'teardown failed... command "' . $command . '" resulted in... ' . $output;
+			$self->{errorString} = 'teardown failed... flushing the alias failed... ' . $@;
 			$self->warn;
-		}
+		};
 	}
 } ## end sub teardown
 
@@ -787,9 +820,9 @@ sub stop {
 
 =head2 check
 
-Verifies the alias is still reachable by listing it via the API. A zero
-curl exit code is treated as healthy. This is the equivalent of fail2ban's
-C<actioncheck>.
+Verifies the alias is still reachable by listing it via the API. A
+successful request is treated as healthy. This is the equivalent of
+fail2ban's C<actioncheck>.
 
     if ( !$backend->check ) {
         $backend->re_init;
@@ -802,15 +835,15 @@ sub check {
 
 	$self->errorblank;
 
-	my $command = $self->_curl( 'alias_util/list/' . $self->{options}{alias} );
+	my $url = $self->_url( 'alias_util/list/' . $self->{options}{alias} );
 
 	if ( $self->{testing} ) {
-		$self->{frontend_obj}->{test_data} = [$command];
+		$self->{frontend_obj}->{test_data} = [ { method => 'GET', url => $url } ];
 		return 1;
 	}
 
-	my $output = `$command 2>&1`;
-	return $? == 0 ? 1 : 0;
+	local $@;
+	return eval { $self->_request( 'GET', $url ); 1; } ? 1 : 0;
 } ## end sub check
 
 =head2 flush
@@ -835,17 +868,18 @@ sub flush {
 		return;
 	}
 
-	my $command = $self->_curl( 'alias_util/flush/' . $self->{options}{alias}, '{}' );
+	my $url = $self->_url( 'alias_util/flush/' . $self->{options}{alias} );
 
 	if ( $self->{testing} ) {
-		$self->{frontend_obj}->{test_data} = [$command];
+		$self->{frontend_obj}->{test_data} = [ { method => 'POST', url => $url, content => '{}' } ];
 	} else {
-		my $output = `$command 2>&1`;
-		if ( $? != 0 ) {
+		local $@;
+		eval { $self->_request( 'POST', $url, '{}' ); 1; } or do {
 			$self->{error}       = 25;
-			$self->{errorString} = 'flush failed... command "' . $command . '" resulted in... ' . $output;
+			$self->{errorString} = 'flush failed... flushing the alias failed... ' . $@;
 			$self->warn;
-		}
+			return;
+		};
 	}
 
 	$self->{banned}      = {};

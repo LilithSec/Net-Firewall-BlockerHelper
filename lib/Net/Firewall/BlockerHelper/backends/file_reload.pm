@@ -83,6 +83,12 @@ The options hash accepts the following.
             If undef or blank, nothing is run and only the file is updated.
         - Default :: undef
 
+    - blank_reload_error :: If true, the reload command producing no output
+            at all is treated as a failure, even with a zero exit. Set to 0
+            for reload commands that are silent on success, such as
+            'systemctl reload nginx'.
+        - Default :: 1
+
     - format :: Per-IP line template. '%%%BAN%%%' is replaced with the IP.
             The rendered lines are newline joined.
         - Default :: '%%%BAN%%%'
@@ -192,6 +198,8 @@ sub new {
 	$self->{options}{footer} = ''          if ( !defined( $self->{options}{footer} ) );
 	$self->{options}{remove_on_teardown} = 1
 		if ( !defined( $self->{options}{remove_on_teardown} ) );
+	$self->{options}{blank_reload_error} = 1
+		if ( !defined( $self->{options}{blank_reload_error} ) );
 
 	return $self;
 } ## end sub new
@@ -248,9 +256,15 @@ sub _apply {
 
 	if ( defined($reload) && $reload ne '' ) {
 		my $output = `$reload 2>&1`;
+		$output = '' if ( !defined($output) );
 		if ( $? != 0 ) {
 			$self->{error}       = $error_flag;
 			$self->{errorString} = 'reload command "' . $reload . '" failed... ' . $output;
+			$self->warn;
+		} elsif ( $self->{options}{blank_reload_error} && $output !~ /\S/ ) {
+			$self->{error} = $error_flag;
+			$self->{errorString}
+				= 'reload command "' . $reload . '" produced no output and blank_reload_error is true';
 			$self->warn;
 		}
 	}
@@ -611,9 +625,15 @@ sub teardown {
 			my $reload = $self->{options}{reload};
 			if ( defined($reload) && $reload ne '' ) {
 				my $output = `$reload 2>&1`;
+				$output = '' if ( !defined($output) );
 				if ( $? != 0 ) {
 					$self->{error}       = 17;
 					$self->{errorString} = 'reload command "' . $reload . '" failed... ' . $output;
+					$self->warn;
+				} elsif ( $self->{options}{blank_reload_error} && $output !~ /\S/ ) {
+					$self->{error} = 17;
+					$self->{errorString}
+						= 'reload command "' . $reload . '" produced no output and blank_reload_error is true';
 					$self->warn;
 				}
 			}

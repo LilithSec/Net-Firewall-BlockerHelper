@@ -51,6 +51,26 @@ sub rules_for {
 	ok( ( grep { $_ eq 'iptables -A derp_ssh -m set --match-set derp_ssh_4 src -p tcp -m multiport --dports 80 -j DELUDE' } @rules ),
 		'delude keeps the tcp rule' );
 	ok( !( grep { /-p udp/ } @rules ), 'delude drops the udp rule entirely' );
+	# xtables-addons provides no IPv6 DELUDE target, so v6 falls back to DROP
+	# so banned IPv6 IPs are still blocked
+	ok( ( grep { $_ eq 'ip6tables -A derp_ssh -m set --match-set derp_ssh_6 src -p tcp -m multiport --dports 80 -j DROP' } @rules ),
+		'delude gives the IPv6 rule a DROP fallback' );
+	ok( !( grep { /^ip6tables.*DELUDE/ } @rules ), 'delude never emits an ip6tables DELUDE rule' );
+}
+
+# --- the delude v6 DROP fallback gets no notrack rule ------------------------
+{
+	my $fw = Net::Firewall::BlockerHelper->new(
+		backend => 'iptables',
+		name    => 'ssh',
+		prefix  => 'derp',
+		testing => 1,
+		options => { type => 'delude' },
+	);
+	$fw->init_backend;
+	my @notrack = grep { / -t raw / && /CT --notrack/ } @{ $fw->{test_data}{commands} };
+	is( scalar(@notrack), 1, 'delude has only the IPv4 notrack rule' );
+	ok( !( grep { /^ip6tables/ } @notrack ), 'the DROP fallback is not exempted from conntrack' );
 }
 
 # --- ports without protocols default to tcp only (not tcp+udp) ---------------
@@ -93,6 +113,15 @@ sub rules_for {
 	my ($destroy) = grep { $td[$_] eq 'ipset destroy derp_ssh_4' } 0 .. $#td;
 	ok( defined($raw_x) && defined($destroy) && $raw_x < $destroy,
 		'raw chain removed before the ipsets are destroyed' );
+
+	# and the same ordering holds for init's stale state cleanup, so re_init
+	# can recover from a teardown that died part way through
+	$fw->{backend_obj}->init;
+	my @fo = @{ $fw->{test_data}{fail_okay_commands} };
+	my ($fo_raw_x) = grep { $fo[$_] eq 'iptables -t raw -X derp_ssh' } 0 .. $#fo;
+	my ($fo_destroy) = grep { $fo[$_] eq 'ipset destroy derp_ssh_4' } 0 .. $#fo;
+	ok( defined($fo_raw_x) && defined($fo_destroy) && $fo_raw_x < $fo_destroy,
+		'init stale cleanup also removes the raw chain before destroying the ipsets' );
 }
 
 # --- plain drop/reject add NO raw rules -------------------------------------

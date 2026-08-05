@@ -134,7 +134,10 @@ The options hash accepts the following.
                 - delude :: Answer a SYN with a SYN/ACK and everything else with
                         a RST, so the port looks open but never completes a
                         session. Requires the DELUDE target from xtables-addons.
-                        TCP only.
+                        TCP only. The target itself is also IPv4 only, as
+                        xtables-addons provides no IPv6 version, so the IPv6
+                        rule falls back to DROP; banned IPv6 IPs are still
+                        blocked, just silently dropped rather than deluded.
             The tarpit and delude types only ever emit '-p tcp' rules; any
             non-tcp protocol or port default (eg the implicit udp) is skipped
             rather than handed to a target the kernel would reject. For these
@@ -456,7 +459,9 @@ sub _rule_specs {
 		$t6 = $t4;
 	} elsif ( $type eq 'delude' ) {
 		$t4 = 'DELUDE';
-		$t6 = 'DELUDE';
+		# xtables-addons provides no IPv6 DELUDE, so v6 falls back to DROP;
+		# banned IPv6 IPs are still blocked, just not deluded
+		$t6 = 'DROP';
 	}
 
 	# TARPIT and DELUDE only handle TCP, so their rules are forced to -p tcp
@@ -561,6 +566,11 @@ sub _notrack_commands {
 	my @commands;
 	foreach my $spec ( $self->_rule_specs ) {
 		my $fam = $spec->{fam};
+
+		# only the traffic actually handled by a reply-crafting target needs
+		# exempting from conntrack; the v6 DROP fallback delude uses does not
+		next if ( $fam->{tgt} !~ /^(TARPIT|DELUDE)/ );
+
 		push( @commands,
 			      $fam->{cmd}
 				. ' -t raw -A '
@@ -714,11 +724,14 @@ sub init {
 	push( @fail_okay_commands, 'ip6tables -F ' . $chain );
 	push( @fail_okay_commands, 'iptables -X ' . $chain );
 	push( @fail_okay_commands, 'ip6tables -X ' . $chain );
+
+	# the stale raw table notrack chain (tarpit/delude only; empty otherwise)
+	# has to go before the ipset destroys, as its rules reference the sets
+	# and a referenced set can not be destroyed
+	push( @fail_okay_commands, $self->_raw_teardown_commands );
+
 	push( @fail_okay_commands, 'ipset destroy ' . $set4 );
 	push( @fail_okay_commands, 'ipset destroy ' . $set6 );
-
-	# stale raw table notrack chain, only for tarpit/delude; empty otherwise
-	push( @fail_okay_commands, $self->_raw_teardown_commands );
 
 	if ( $self->{testing} ) {
 		$self->{frontend_obj}->{test_data}{fail_okay_commands} = \@fail_okay_commands;
