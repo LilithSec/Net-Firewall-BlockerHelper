@@ -3,7 +3,7 @@ package Net::Firewall::BlockerHelper::backends::fastly;
 use 5.006;
 use strict;
 use warnings;
-use base 'Error::Helper';
+use base         qw( Error::Helper Net::Firewall::BlockerHelper::Util );
 use Regexp::IPv4 qw($IPv4_re);
 use Regexp::IPv6 qw($IPv6_re);
 
@@ -565,24 +565,6 @@ sub list {
 
 	return keys( %{ $self->{banned} } );
 }
-
-# Internal helper. Returns a true value if the passed scalar is a valid IPv4 or
-# IPv6 CIDR range, that is an address followed by "/" and a prefix length that
-# is within the range valid for its family (0 to 32 for IPv4, 0 to 128 for
-# IPv6). Returns false otherwise.
-sub _valid_cidr {
-	my ( $self, $cidr ) = @_;
-
-	return 0 if ( !defined($cidr) || ref($cidr) ne '' );
-
-	if ( $cidr =~ m!\A(.+)/([0-9]{1,3})\z! ) {
-		my ( $addr, $prefix ) = ( $1, $2 );
-		return 1 if ( $addr =~ /\A$IPv4_re\z/ && $prefix <= 32 );
-		return 1 if ( $addr =~ /\A$IPv6_re\z/ && $prefix <= 128 );
-	}
-
-	return 0;
-} ## end sub _valid_cidr
 
 =head2 ban_cidr
 

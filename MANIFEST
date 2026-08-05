@@ -1,5 +1,6 @@
 Changes
 lib/Net/Firewall/BlockerHelper.pm
+lib/Net/Firewall/BlockerHelper/Util.pm
 lib/Net/Firewall/BlockerHelper/backends/abuseipdb.pm
 lib/Net/Firewall/BlockerHelper/backends/akamai.pm
 lib/Net/Firewall/BlockerHelper/backends/aws_wafv2.pm
