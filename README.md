@@ -2,7 +2,8 @@
 
 Helps manage (un)blocking IPs via various firewalls.
 
-Currently included local backends are...
+Currently included local backends are and all should be well tested, especially pf and
+ipfw...
 
 - firewalld
 - hosts_deny (TCP wrappers /etc/hosts.deny; libwrap aware daemons only)
@@ -17,7 +18,9 @@ Currently included local backends are...
 - xdp (XDP/eBPF packet drops via xdp-filter from xdp-tools)
 
 The following remote/API backends are available. These use LWP::UserAgent,
-which is only loaded if they are used.
+which is only loaded if they are used. Please note these have been built based
+of existing samples else where or docs and not tested due to lack of access to systems to
+test against at this time.
 
 - abuseipdb (report banned IPs to AbuseIPDB; reporting only, blocks nothing itself)
 - akamai (Akamai Network Lists via the v2 API, EdgeGrid authenticated)
@@ -35,7 +38,9 @@ which is only loaded if they are used.
 - routeros_api (MikroTik RouterOS address-list via the RouterOS 7 REST API)
 - vyos (VyOS firewall address-group via the HTTP API)
 
-The following cloud backends are available. These drive the provider's CLI.
+The following cloud backends are available. These drive the provider's CLI.  Please note
+these have been built based of existing samples else where or docs and not tested due to
+lack of access to systems to test against at this time.
 
 - aws_wafv2 (AWS WAFv2 IP sets via the aws CLI)
 - azure (Azure NSG deny rule source prefixes via the az CLI)
@@ -45,10 +50,14 @@ The following other remote backends are available.
 
 - bgp_rtbh (BGP Remote Triggered Black Hole; announces /32 or /128 routes with
   the RFC 7999 blackhole community, or a FlowSpec discard rule, via ExaBGP,
-  gobgp, or FRR/vtysh)
-- dns_rpz (DNS Response Policy Zone rpz-client-ip/rpz-ip triggers via nsupdate)
-- nsupdate (DNS based blocklist via BIND dynamic updates)
-- routeros (MikroTik RouterOS address-list, driven over ssh)
+  gobgp, or FRR/vtysh ... exabgp and gobgp have live tests if the available... none
+  currently for FRR/vtysh)
+- dns_rpz (DNS Response Policy Zone rpz-client-ip/rpz-ip triggers via nsupdate... live
+  tests available if named is instaleld)
+- nsupdate (DNS based blocklist via BIND dynamic updates...  live tests available if named
+  is instaleld)
+- routeros (MikroTik RouterOS address-list, driven over ssh... implemented based on found
+  examples/docs and not currently tested due to lack of access)
 
 The following generic backends are available.
 
