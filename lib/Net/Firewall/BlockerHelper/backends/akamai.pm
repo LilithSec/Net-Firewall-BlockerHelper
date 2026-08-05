@@ -13,11 +13,11 @@ Net::Firewall::BlockerHelper::backends::akamai - Akamai Network Lists backend fo
 
 =head1 VERSION
 
-Version 0.1.0
+Version 0.2.0
 
 =cut
 
-our $VERSION = '0.1.0';
+our $VERSION = '0.2.0';
 
 =head1 SYNOPSIS
 
@@ -296,23 +296,6 @@ sub _element_url {
 	my ( $self, $ip ) = @_;
 
 	return $self->_list_url . '/elements?element=' . $self->_uri_escape($ip);
-}
-
-# Internal helper. Minimal percent encoder so URI::Escape is not needed.
-sub _uri_escape {
-	my ( $self, $string ) = @_;
-
-	$string =~ s/([^A-Za-z0-9\-._~])/sprintf('%%%02X', ord($1))/ge;
-
-	return $string;
-}
-
-# Internal helper. Returns a canonical JSON::PP encoder/decoder.
-sub _json {
-	my ($self) = @_;
-
-	require JSON::PP;
-	return JSON::PP->new->canonical->utf8;
 }
 
 # Internal helper. Builds and returns the EdgeGrid EG1-HMAC-SHA256

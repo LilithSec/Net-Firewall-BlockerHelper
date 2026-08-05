@@ -13,11 +13,11 @@ Net::Firewall::BlockerHelper::backends::opnsense - OPNsense firewall alias backe
 
 =head1 VERSION
 
-Version 0.1.0
+Version 0.2.0
 
 =cut
 
-our $VERSION = '0.1.0';
+our $VERSION = '0.2.0';
 
 =head1 SYNOPSIS
 
@@ -278,14 +278,6 @@ sub new {
 
 	return $self;
 } ## end sub new
-
-# Internal helper. Returns a canonical JSON::PP encoder/decoder.
-sub _json {
-	my ($self) = @_;
-
-	require JSON::PP;
-	return JSON::PP->new->canonical->utf8;
-}
 
 # Internal helper. Returns the URL for the passed method path, appended to
 # <scheme>://<host>/api/firewall/.

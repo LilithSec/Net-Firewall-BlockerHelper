@@ -13,11 +13,11 @@ Net::Firewall::BlockerHelper::backends::routeros_api - MikroTik RouterOS backend
 
 =head1 VERSION
 
-Version 0.1.0
+Version 0.2.0
 
 =cut
 
-our $VERSION = '0.1.0';
+our $VERSION = '0.2.0';
 
 =head1 SYNOPSIS
 
@@ -275,23 +275,6 @@ sub _list_url {
 	my $menu = ( defined($ip) && $ip =~ /\A$IPv6_re\z/ ) ? 'ipv6' : 'ip';
 
 	return $self->{options}{scheme} . '://' . $self->{options}{host} . '/rest/' . $menu . '/firewall/address-list';
-}
-
-# Internal helper. Minimal percent encoder so URI::Escape is not needed.
-sub _uri_escape {
-	my ( $self, $string ) = @_;
-
-	$string =~ s/([^A-Za-z0-9\-._~])/sprintf('%%%02X', ord($1))/ge;
-
-	return $string;
-}
-
-# Internal helper. Returns a canonical JSON::PP encoder/decoder.
-sub _json {
-	my ($self) = @_;
-
-	require JSON::PP;
-	return JSON::PP->new->canonical->utf8;
 }
 
 # Internal helper. Performs a HTTP request via LWP::UserAgent using HTTP basic

@@ -3,7 +3,7 @@ package Net::Firewall::BlockerHelper::backends::netscaler;
 use 5.006;
 use strict;
 use warnings;
-use base 'Error::Helper';
+use base         qw( Error::Helper Net::Firewall::BlockerHelper::Util );
 use Regexp::IPv4 qw($IPv4_re);
 use Regexp::IPv6 qw($IPv6_re);
 
@@ -13,11 +13,11 @@ Net::Firewall::BlockerHelper::backends::netscaler - Citrix NetScaler/ADC backend
 
 =head1 VERSION
 
-Version 0.1.0
+Version 0.2.0
 
 =cut
 
-our $VERSION = '0.1.0';
+our $VERSION = '0.2.0';
 
 =head1 SYNOPSIS
 
@@ -286,15 +286,6 @@ sub _base_url {
 	my ($self) = @_;
 
 	return $self->{options}{scheme} . '://' . $self->{options}{host} . '/nitro/v1/config';
-}
-
-# Internal helper. Minimal percent encoder so URI::Escape is not needed.
-sub _uri_escape {
-	my ( $self, $string ) = @_;
-
-	$string =~ s/([^A-Za-z0-9\-._~])/sprintf('%%%02X', ord($1))/ge;
-
-	return $string;
 }
 
 # Internal helper. Performs a HTTP request via LWP::UserAgent, dying with a

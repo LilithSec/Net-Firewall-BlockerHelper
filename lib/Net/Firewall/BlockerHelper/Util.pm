@@ -12,11 +12,11 @@ Net::Firewall::BlockerHelper::Util - Shared internal helpers mixed into the fron
 
 =head1 VERSION
 
-Version 0.1.0
+Version 0.0.1
 
 =cut
 
-our $VERSION = '0.1.0';
+our $VERSION = '0.0.1';
 
 =head1 SYNOPSIS
 
@@ -49,6 +49,85 @@ kept; the methods only exist here so that a single definition is shared instead
 of being duplicated per backend.
 
 =cut
+
+# Internal helper. Returns a JSON object configured the way every backend that
+# speaks a JSON REST API wants it, used both to encode request bodies and to
+# decode responses.
+#
+# JSON is used rather than JSON::PP directly because it picks JSON::XS as its
+# backend when that is installed and only falls back to the pure perl JSON::PP
+# when it is not, so the fast path is taken wherever it is available. The
+# object interface used here is the same either way.
+#
+# Two options are set. canonical makes the encoder sort object keys, so the
+# same data always encodes to the same string; without it the key order follows
+# the hash order and the bodies recorded in test_data would vary run to run and
+# could not be compared against a fixed expected string. utf8 makes the encoder
+# emit UTF-8 encoded octets and the decoder expect them, which is what wants to
+# be handed to and taken from an HTTP layer.
+#
+# JSON is pulled in with require at call time rather than use at compile time,
+# matching how the HTTP backends load LWP::UserAgent. Only the JSON speaking
+# backends ever need it, so it stays off the path of the many backends that do
+# not and is a recommends rather than a hard prereq.
+#
+# Takes no arguments.
+#
+# Returns a JSON object. A new object is built on every call and nothing is
+# cached, so the caller may reconfigure the returned object freely without
+# affecting anything else.
+#
+#     my $body = $self->_json->encode( { name => $name, ip => $ip } );
+#
+#     my $decoded = $self->_json->decode($response_content);
+#     my $id      = $decoded->{result}{id};
+sub _json {
+	my ($self) = @_;
+
+	require JSON;
+	return JSON->new->canonical->utf8;
+}
+
+# Internal helper. Percent encodes a string for use in a URL, so that the dist
+# does not need URI::Escape as a dependency for the handful of backends that
+# build URLs.
+#
+# Every character outside the RFC 3986 unreserved set (A-Z, a-z, 0-9, "-", ".",
+# "_", and "~") is replaced with a percent sign and its two digit uppercase hex
+# value. Note that this includes "/", which becomes %2F, so this escapes a
+# single path segment or query value and must not be run over a whole URL or an
+# already assembled path.
+#
+# The encoding is byte oriented, using ord on each character. Input is expected
+# to be bytes, which is all the callers ever pass, being IP addresses and
+# configured object names. A string holding wide characters would produce more
+# than two hex digits for those characters and would need encoding to UTF-8
+# octets first.
+#
+# Args:
+#
+#     string - The scalar to encode. Expected to be a defined, non-reference
+#              string of bytes. Passing undef warns and returns undef under
+#              warnings, so callers check for a value first.
+#
+# Returns the percent encoded string. The argument is not modified in place;
+# the copy taken off @_ is what gets edited and returned. A string made up
+# entirely of unreserved characters comes back unchanged.
+#
+#     $self->_uri_escape('10.0.0.1');        # 10.0.0.1, unreserved throughout
+#     $self->_uri_escape('2001:db8::1');     # 2001%3Adb8%3A%3A1
+#     $self->_uri_escape('10.0.0.0/8');      # 10.0.0.0%2F8
+#     $self->_uri_escape('ssh bans');        # ssh%20bans
+#
+#     # building a URL from a name that may hold anything
+#     my $url = $self->_base_url . '/lists/' . $self->_uri_escape($name);
+sub _uri_escape {
+	my ( $self, $string ) = @_;
+
+	$string =~ s/([^A-Za-z0-9\-._~])/sprintf('%%%02X', ord($1))/ge;
+
+	return $string;
+}
 
 # Internal helper. Tests whether a scalar is a syntactically valid IPv4 or IPv6
 # CIDR range. This is the validation used by ban_cidr, unban_cidr, and the

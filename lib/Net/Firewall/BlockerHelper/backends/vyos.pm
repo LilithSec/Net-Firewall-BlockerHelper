@@ -13,11 +13,11 @@ Net::Firewall::BlockerHelper::backends::vyos - VyOS backend using the HTTP API.
 
 =head1 VERSION
 
-Version 0.1.0
+Version 0.2.0
 
 =cut
 
-our $VERSION = '0.1.0';
+our $VERSION = '0.2.0';
 
 =head1 SYNOPSIS
 
@@ -242,23 +242,6 @@ sub _group_path {
 	my $node = ( $ip =~ /\A$IPv6_re\z/ ) ? 'ipv6-address-group' : 'address-group';
 
 	return [ 'firewall', 'group', $node, $self->{options}{group}, 'address', $ip ];
-}
-
-# Internal helper. Minimal percent encoder so URI::Escape is not needed.
-sub _uri_escape {
-	my ( $self, $string ) = @_;
-
-	$string =~ s/([^A-Za-z0-9\-._~])/sprintf('%%%02X', ord($1))/ge;
-
-	return $string;
-}
-
-# Internal helper. Returns a canonical JSON::PP encoder/decoder.
-sub _json {
-	my ($self) = @_;
-
-	require JSON::PP;
-	return JSON::PP->new->canonical->utf8;
 }
 
 # Internal helper. Returns the JSON string for a configuration operation on the

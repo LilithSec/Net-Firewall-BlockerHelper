@@ -13,11 +13,11 @@ Net::Firewall::BlockerHelper::backends::panos - Palo Alto Networks PAN-OS backen
 
 =head1 VERSION
 
-Version 0.1.0
+Version 0.2.0
 
 =cut
 
-our $VERSION = '0.1.0';
+our $VERSION = '0.2.0';
 
 =head1 SYNOPSIS
 
@@ -245,15 +245,6 @@ sub _url {
 	my ($self) = @_;
 
 	return $self->{options}{scheme} . '://' . $self->{options}{host} . '/api/';
-}
-
-# Internal helper. Minimal percent encoder so URI::Escape is not needed.
-sub _uri_escape {
-	my ( $self, $string ) = @_;
-
-	$string =~ s/([^A-Za-z0-9\-._~])/sprintf('%%%02X', ord($1))/ge;
-
-	return $string;
 }
 
 # Internal helper. Builds an x-www-form-urlencoded body from the passed

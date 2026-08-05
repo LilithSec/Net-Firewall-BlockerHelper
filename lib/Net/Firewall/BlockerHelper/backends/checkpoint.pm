@@ -13,11 +13,11 @@ Net::Firewall::BlockerHelper::backends::checkpoint - Check Point Management (web
 
 =head1 VERSION
 
-Version 0.1.0
+Version 0.2.0
 
 =cut
 
-our $VERSION = '0.1.0';
+our $VERSION = '0.2.0';
 
 =head1 SYNOPSIS
 
@@ -273,14 +273,6 @@ sub _obj_name {
 
 	return $name;
 } ## end sub _obj_name
-
-# Internal helper. Returns a canonical JSON::PP encoder/decoder.
-sub _json {
-	my ($self) = @_;
-
-	require JSON::PP;
-	return JSON::PP->new->canonical->utf8;
-}
 
 # Internal helper. Performs a POST via LWP::UserAgent, sending the session id in
 # the X-chkp-sid header when one is set, returning the decoded JSON body (or
