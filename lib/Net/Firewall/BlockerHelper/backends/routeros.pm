@@ -255,9 +255,30 @@ sub new {
 	return $self;
 } ## end sub new
 
-# Internal helper. Returns the SSH command prefix string built from the
-# ssh_cmd, ssh_port, identity, user, and host options, e.g.
-# "ssh -p 22 -i /key admin@host".
+# Internal helper. Assembles the SSH invocation used to reach the router,
+# everything up to but not including the RouterOS command itself.
+#
+# The port and identity are only emitted when their options are set to
+# something non empty, so an instance relying on the SSH client's own
+# configuration, a ~/.ssh/config Host block or the default port and key,
+# produces a short command rather than one with empty flags in it. The user
+# and host are always emitted, as there is no sensible fallback for either.
+#
+# Note there is no authentication handling here beyond pointing at an identity
+# file. Key based authentication is assumed; a router that prompts for a
+# password would hang rather than fail, so the key has to be in place before
+# this backend is usable.
+#
+# Takes no arguments; everything comes from the options.
+#
+# Returns the SSH prefix as a single string with no trailing space, ready for
+# _remote to append a quoted RouterOS command to.
+#
+#     # with only user and host set, user defaulting to admin
+#     $self->_ssh;                  # ssh admin@10.0.0.1
+#
+#     # with ssh_port 2222 and an identity file
+#     $self->_ssh;                  # ssh -p 2222 -i /etc/routeros.key admin@10.0.0.1
 sub _ssh {
 	my ($self) = @_;
 
@@ -280,8 +301,32 @@ sub _ssh {
 	return $ssh;
 } ## end sub _ssh
 
-# Internal helper. Given a RouterOS CLI line, returns the full command to
-# run it over SSH, e.g. <_ssh> '<routeros_cli>'.
+# Internal helper. Wraps a RouterOS CLI line into the full shell command that
+# runs it on the router over SSH. Every command this backend issues goes out
+# through here.
+#
+# The RouterOS side is wrapped in single quotes so that the local shell hands
+# it to ssh as one argument rather than splitting it on the spaces that
+# RouterOS syntax is full of. Note that this means a CLI line containing a
+# single quote of its own would break the quoting; nothing here escapes them,
+# and no caller passes one, since the values that reach this are addresses and
+# list names.
+#
+# Args:
+#
+#     routeros_cli - The RouterOS CLI line to run, as a plain string, such as
+#                    '/ip firewall address-list add list=kur_ssh address=10.0.0.1'.
+#                    Passed through as is apart from being quoted.
+#
+# Returns the full local shell command as a single string, ready to hand to
+# the runner, of the shape "<ssh prefix> '<cli line>'".
+#
+#     $self->_remote('/ip firewall address-list print');
+#     #   ssh admin@10.0.0.1 '/ip firewall address-list print'
+#
+#     $self->_remote(
+#         '/ip firewall address-list add list=kur_ssh address=10.0.0.1' );
+#     #   ssh admin@10.0.0.1 '/ip firewall address-list add list=kur_ssh address=10.0.0.1'
 sub _remote {
 	my ( $self, $routeros_cli ) = @_;
 

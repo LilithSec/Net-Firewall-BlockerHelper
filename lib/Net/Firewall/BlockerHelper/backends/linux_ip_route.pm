@@ -228,10 +228,56 @@ sub new {
 	return $self;
 } ## end sub new
 
-# Internal helper. Returns the ip route command for the passed action (add,
-# del, or show) and IP, using -6 for IPv6 IPs. For add and del the route type
-# is given bare as that is what the route spec wants, while for show it is a
-# selector and must be given via the type keyword.
+# Internal helper. Returns the iproute2 command for adding, removing, or
+# looking up the null route that blocks the passed IP. Every command this
+# backend runs comes from here.
+#
+# The family is chosen per IP rather than per instance, since a single
+# instance bans both. IPv4 gets no flag, as that is iproute2's default, and
+# IPv6 gets -6.
+#
+# The route type is placed differently depending on the action, which is the
+# one subtlety worth knowing about. For add and del the type is part of the
+# route specification and is written bare, immediately before the address. For
+# show it is a filter on which routes to list rather than part of a spec, and
+# iproute2 only accepts it there behind the literal "type" keyword. Writing it
+# bare for show would be a syntax error, and writing "type" for add would be
+# too.
+#
+# Note this only ever builds the command; running it and interpreting the exit
+# status is the caller's job.
+#
+# Args:
+#
+#     action - The iproute2 route subcommand, as a plain string. One of 'add'
+#              to install the null route, 'del' to remove it, or 'show' to
+#              look it up, which is what check and list use to see whether a
+#              ban is still in place. Anything else is passed through
+#              unchecked and would produce an invalid command.
+#
+#     ip     - The address to route, as a plain string. Expected to be an
+#              already validated and lowercased IPv4 or IPv6 address. The
+#              family is decided by matching against $IPv4_re, so anything
+#              that is not valid IPv4 is treated as IPv6.
+#
+# Returns the command as a single string ready to hand to the runner. The
+# route type comes from the blocktype option, which is 'unreachable' by
+# default and may also be 'blackhole' or 'prohibit'; the three differ in what,
+# if anything, is sent back to the sender.
+#
+#     $self->_route_command( 'add', '10.0.0.1' );
+#     #   ip route add unreachable 10.0.0.1
+#
+#     $self->_route_command( 'del', '2001:db8::1' );
+#     #   ip -6 route del unreachable 2001:db8::1
+#
+#     # show puts the type behind the type keyword
+#     $self->_route_command( 'show', '10.0.0.1' );
+#     #   ip route show type unreachable 10.0.0.1
+#
+#     # with blocktype set to blackhole
+#     $self->_route_command( 'add', '10.0.0.1' );
+#     #   ip route add blackhole 10.0.0.1
 sub _route_command {
 	my ( $self, $action, $ip ) = @_;
 

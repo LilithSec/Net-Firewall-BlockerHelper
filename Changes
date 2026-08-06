@@ -3,10 +3,12 @@ Revision history for Net-Firewall-BlockerHelper
 0.2.0   2026-08-05/00:00
         - Add Net::Firewall::BlockerHelper::Util, a mixin of shared internal
           helpers inherited by the frontend and all backends. _valid_cidr,
-          _uri_escape, and _json now live there instead of being duplicated
-          in each.
+          _uri_escape, _json, and _kill_commands now live there instead of
+          being duplicated in each.
         - JSON backends now use JSON instead of JSON::PP, picking up JSON::XS
           when it is installed. Added as a runtime recommends.
+        - Document every internal method to the same standard as the public
+          API: purpose, arguments, return format, and examples.
 
 0.1.0   2026-08-05/00:00
         - Add CIDR ban support via new ban_cidr, unban_cidr, and list_cidr

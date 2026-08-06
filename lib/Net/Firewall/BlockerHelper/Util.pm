@@ -88,6 +88,112 @@ sub _json {
 	return JSON->new->canonical->utf8;
 }
 
+# Internal helper. Returns the conntrack commands that tear down the passed
+# IP's existing connections, used by the backends whose kill option drops
+# connection tracking entries.
+#
+# Blocking an address only stops new connections. Anything already established
+# keeps flowing, because the block rules match the source but established
+# traffic has already been accepted and is tracked. Dropping the conntrack
+# entries is what actually cuts an attacker off mid session.
+#
+# The kill is scoped to whatever is actually being blocked rather than
+# indiscriminately dropping every entry for the address. With protocols
+# configured, one command is emitted per protocol. With ports but no
+# protocols, tcp and udp are assumed, matching the default the rule builders
+# use in the same situation. With neither, everything is being blocked, so a
+# single unscoped command drops every entry for the address.
+#
+# Protocols conntrack cannot filter by are skipped rather than emitted and
+# left to fail. The mapping also folds the several spellings of IPv6 ICMP onto
+# one conntrack name, and duplicates are suppressed, so listing both icmp6 and
+# ipv6-icmp produces one command rather than two identical ones. ICMP of the
+# wrong family is skipped, since an IPv4 address can have no icmpv6 entries
+# and vice versa.
+#
+# This lives here because the iptables, nftables, and firewalld backends all
+# want exactly this. A backend whose kill works differently overrides it: see
+# the ufw backend, which offers an ss based mode as well and supports a
+# narrower protocol set.
+#
+# Args:
+#
+#     ip - The address whose connections should be dropped, as a plain string.
+#          Expected to be an already validated and lowercased IPv4 or IPv6
+#          address. The family is decided by matching against $IPv4_re and
+#          controls both the -f flag and which ICMP protocols are relevant.
+#
+# Returns the commands as a list of strings, ready to hand to the runner. One
+# entry per applicable protocol, or a single unscoped entry when nothing is
+# configured. May be empty if every configured protocol was filtered out, for
+# instance an IPv4 instance configured only for ipv6-icmp; callers run
+# whatever comes back and do not depend on there being any.
+#
+#     # nothing configured: drop every entry for the address
+#     $self->_kill_commands('10.0.0.1');
+#     #   conntrack -D -s 10.0.0.1
+#
+#     # IPv6 needs the family stated, as conntrack defaults to IPv4
+#     $self->_kill_commands('2001:db8::1');
+#     #   conntrack -f ipv6 -D -s 2001:db8::1
+#
+#     # protocols tcp and udp
+#     $self->_kill_commands('10.0.0.1');
+#     #   conntrack -D -p tcp -s 10.0.0.1
+#     #   conntrack -D -p udp -s 10.0.0.1
+#
+#     # ports 22 with no protocols, so tcp and udp are assumed
+#     #   conntrack -D -p tcp -s 10.0.0.1
+#     #   conntrack -D -p udp -s 10.0.0.1
+sub _kill_commands {
+	my ( $self, $ip ) = @_;
+
+	# conntrack defaults to IPv4, so IPv6 IPs need the family specified
+	my $is_v4  = ( $ip =~ /\A$IPv4_re\z/ ) ? 1  : 0;
+	my $family = $is_v4                    ? '' : '-f ipv6 ';
+
+	my @protos = @{ $self->{protocols} };
+	if ( !@protos && defined( $self->{ports}[0] ) ) {
+		# ports without protocols means tcp and udp are being blocked
+		@protos = ( 'tcp', 'udp' );
+	}
+
+	# nothing configured means everything is being blocked, so drop every
+	# entry for the IP
+	if ( !@protos ) {
+		return ( 'conntrack ' . $family . '-D -s ' . $ip );
+	}
+
+	# scope the kill to the blocked protocols; ones conntrack can not filter
+	# by are skipped as are the icmps of the wrong family
+	my %conntrack_protos = (
+		tcp         => 'tcp',
+		udp         => 'udp',
+		udplite     => 'udplite',
+		sctp        => 'sctp',
+		dccp        => 'dccp',
+		gre         => 'gre',
+		icmp        => 'icmp',
+		icmpv6      => 'icmpv6',
+		icmp6       => 'icmpv6',
+		'ipv6-icmp' => 'icmpv6',
+	);
+
+	my @commands;
+	my %seen;
+	foreach my $proto (@protos) {
+		my $conntrack_proto = $conntrack_protos{$proto};
+		next if ( !defined($conntrack_proto) );
+		next if ( $conntrack_proto eq 'icmp'   && !$is_v4 );
+		next if ( $conntrack_proto eq 'icmpv6' && $is_v4 );
+		next if ( $seen{$conntrack_proto} );
+		$seen{$conntrack_proto} = 1;
+		push( @commands, 'conntrack ' . $family . '-D -p ' . $conntrack_proto . ' -s ' . $ip );
+	}
+
+	return @commands;
+} ## end sub _kill_commands
+
 # Internal helper. Percent encodes a string for use in a URL, so that the dist
 # does not need URI::Escape as a dependency for the handful of backends that
 # build URLs.

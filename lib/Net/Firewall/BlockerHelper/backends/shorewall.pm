@@ -239,9 +239,32 @@ sub new {
 	return $self;
 } ## end sub new
 
-# Internal helper. Returns the shorewall command to use for the passed IP,
-# picking shorewall_cmd for IPv4 addresses and shorewall6_cmd for IPv6
-# addresses.
+# Internal helper. Picks which of the two shorewall binaries to run for the
+# passed IP.
+#
+# Shorewall splits IPv4 and IPv6 across two separate programs with separate
+# configuration and separate dynamic blacklists, so unlike the backends that
+# pass a family flag to a single binary, here the family decides which command
+# is invoked. Handing an IPv6 address to shorewall rather than shorewall6
+# would be rejected, so this choice has to be made for every ban and unban.
+#
+# Args:
+#
+#     ip - The address the command will act on, as a plain string. Expected to
+#          be an already validated and lowercased IPv4 or IPv6 address. The
+#          family is decided by matching against $IPv4_re, so anything that is
+#          not valid IPv4 is treated as IPv6.
+#
+# Returns the command as a plain string, from either the shorewall_cmd option,
+# 'shorewall' by default, or the shorewall6_cmd option, 'shorewall6' by
+# default. Only the program is returned; the subcommand and the address are
+# appended by the caller.
+#
+#     $self->_cmd_for('10.0.0.1');      # shorewall
+#     $self->_cmd_for('2001:db8::1');   # shorewall6
+#
+#     # as used when building a ban
+#     my $command = $self->_cmd_for($ip) . ' drop ' . $ip;
 sub _cmd_for {
 	my ( $self, $ip ) = @_;
 
@@ -578,9 +601,31 @@ sub unban_cidr {
 	delete( $self->{banned_cidr}{ $opts{ban} } );
 } ## end sub unban_cidr
 
-# Internal helper. Like _cmd_for but for a CIDR range, picking
-# shorewall_cmd for IPv4 ranges and shorewall6_cmd for IPv6 ranges based
-# on the address portion of the range.
+# Internal helper. The CIDR counterpart of _cmd_for: picks which of the two
+# shorewall binaries to run for the passed range.
+#
+# A separate sub rather than a wider _cmd_for because the family has to be
+# read off the address portion of the range, not off the whole string. A range
+# always holds a "/" and a prefix length, which would never match the IPv4
+# regexp, so passing a range straight to _cmd_for would silently select
+# shorewall6 for every range including IPv4 ones.
+#
+# Args:
+#
+#     cidr - The range the command will act on, as a plain string. Expected to
+#            be an already validated CIDR range such as "10.0.0.0/8" or
+#            "2001:db8::/32". The address is split off at the "/" and matched
+#            against $IPv4_re; anything that does not parse as a range with an
+#            IPv4 address, including a bare address with no prefix, is treated
+#            as IPv6.
+#
+# Returns the command as a plain string, from either the shorewall_cmd option,
+# 'shorewall' by default, or the shorewall6_cmd option, 'shorewall6' by
+# default. Only the program is returned; the subcommand and the range are
+# appended by the caller.
+#
+#     $self->_cmd_for_cidr('10.0.0.0/8');      # shorewall
+#     $self->_cmd_for_cidr('2001:db8::/32');   # shorewall6
 sub _cmd_for_cidr {
 	my ( $self, $cidr ) = @_;
 

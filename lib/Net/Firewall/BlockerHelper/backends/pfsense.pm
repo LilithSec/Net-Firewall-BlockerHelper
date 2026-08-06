@@ -264,27 +264,81 @@ sub new {
 	return $self;
 } ## end sub new
 
-# Internal helper. Returns the base URL for the pfSense host.
+# Internal helper. Returns the scheme and host of the pfSense box, which every
+# API URL is built on.
+#
+# The scheme is fixed at https rather than configurable, since the pfSense API
+# is expected to be run over TLS.
+#
+# Takes no arguments; the host comes from the options.
+#
+# Returns the base URL as a string, with no trailing slash.
+#
+#     $self->_base;    # https://pf.example.org
 sub _base {
 	my ($self) = @_;
 
 	return 'https://' . $self->{options}{host};
 }
 
-# Internal helper. Returns the URL used to verify the alias exists.
+# Internal helper. Returns the URL that reads back the alias, used by init and
+# check to confirm it is there.
+#
+# Since this backend creates nothing, the alias existing is the whole of its
+# setup, and an alias deleted out from under a running process is what this
+# detects. init runs it so a misconfigured alias name fails immediately rather
+# than at the first ban, and check runs it to decide whether the self heal
+# path should re-push the current bans.
+#
+# The alias name is percent encoded going into the query string, as it is a
+# configured value rather than something derived.
+#
+# Takes no arguments; the alias name comes from the options.
+#
+# Returns the URL as a string, for a GET whose exit is only inspected for
+# success.
+#
+#     $self->_probe_url;
+#     #   https://pf.example.org/api/v2/firewall/alias?name=blocklist
 sub _probe_url {
 	my ($self) = @_;
 
 	return $self->_base . '/api/v2/firewall/alias?name=' . $self->_uri_escape( $self->{options}{alias} );
 }
 
-# Internal helper. Renders the alias body from the current set of banned IPs.
-# The address field is a sorted array of IP strings. An optional argument may
-# be passed to render an explicit list of IPs instead of the current state,
-# used by teardown to render an empty membership.
+# Internal helper. Renders the complete pfSense alias body from the current
+# bans, which is what gets pushed to replace the alias contents.
 #
-#     my $body = $self->_render;
-#     my $body = $self->_render( [] );
+# The alias is replace-in-full: there is no add or remove one entry call, so
+# every ban and unban rewrites the whole membership from the internal state.
+#
+# Single addresses and CIDR ranges are held in two separate internal lists but
+# go into the same alias, since pfSense does not distinguish them here. Unlike
+# most of the other backends they are merged and sorted together into one run
+# rather than emitted as two, so the ordering is a single lexical sort across
+# both.
+#
+# Note the type is sent as 'host' even when the alias holds ranges. That is
+# what the alias is configured as, and pfSense accepts CIDR entries in it.
+#
+# Args:
+#
+#     ips - Optional arrayref of entries to render instead of the current
+#           state. Each entry is a plain string, an address or a CIDR range.
+#           Pass an empty arrayref to render an empty alias, which is how
+#           teardown and flush clear it. When omitted or undef, the current
+#           bans are used, which is what every normal call does.
+#
+# Returns the alias body as a JSON string, ready to be the content of the
+# update request.
+#
+#     # with 10.0.0.1 and 10.0.0.0/8 banned
+#     $self->_render;
+#     #   {"address":["10.0.0.0/8","10.0.0.1"],"id":"blocklist","type":"host"}
+#
+#     # explicitly empty, as teardown does
+#     $self->_render( [] );
+#     #   {"address":[],"id":"blocklist","type":"host"}
 sub _render {
 	my ( $self, $ips ) = @_;
 
@@ -302,9 +356,40 @@ sub _render {
 	);
 } ## end sub _render
 
-# Internal helper. Performs a HTTP request via LWP::UserAgent, returning the
-# decoded JSON on success and dying with a explanation on any HTTP level
-# failure. Never called in testing mode.
+# Internal helper. Performs one HTTP request against the pfSense API. Every
+# call this backend makes to the box goes through here.
+#
+# The user agent is built on first use and cached on the object, so a run of
+# requests shares one agent. LWP::UserAgent is loaded with require at that
+# point rather than at compile time, since only the HTTP backends need it;
+# failing to load it dies with an explanation naming this backend. The
+# insecure option turns off certificate verification, which is there because a
+# pfSense box commonly presents a self signed certificate.
+#
+# Any HTTP level failure dies rather than setting an error. The callers wrap
+# this in eval and turn the exception into the appropriate error code, which
+# is what lets one helper serve paths that report ban, unban, and teardown
+# failures differently.
+#
+# Never called in testing mode; those paths record the request instead.
+#
+# Args:
+#
+#     method - The HTTP method, as a plain string, such as 'GET' or 'PATCH'.
+#
+#     url    - The full URL to request, as a plain string, built on _base.
+#
+#     body   - Optional request body, as an already encoded JSON string,
+#              normally from _render. undef for methods that carry no body.
+#
+# Returns the decoded response body as whatever structure the JSON held,
+# normally a hashref. Dies on any non success HTTP status.
+#
+#     $self->_request( 'GET', $self->_probe_url );
+#
+#     # the usual shape at the call sites
+#     eval { $self->_request( 'PATCH', $url, $self->_render ); };
+#     if ($@) { ... raise banFailed ... }
 sub _request {
 	my ( $self, $method, $url, $body ) = @_;
 

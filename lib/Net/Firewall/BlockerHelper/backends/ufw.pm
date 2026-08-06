@@ -308,9 +308,49 @@ sub new {
 	return $self;
 } ## end sub new
 
-# Internal helper. Returns the list of ufw rule specifications (the part
-# after deny/reject) for the passed IP, based on the configured protocols and
-# ports.
+# Internal helper. Works out the protocol and port combinations this instance
+# needs to block for the passed IP, and returns them as ufw rule
+# specifications.
+#
+# This backend differs from the ipset based ones in a way that shapes
+# everything here: ufw has no set or group concept, so there is nothing to add
+# an address to. Rules are per address, which is why the IP is an argument
+# rather than the specs being static and built once at init. Banning writes
+# these rules and unbanning deletes them, so the count of rules on the host
+# grows with the number of bans.
+#
+# There is no family split either. ufw works out the family from the address
+# in the rule, so unlike the iptables and nftables backends there is no per
+# family loop and no filtering of protocols that belong to the other family.
+#
+# Ports are only attached to tcp and udp, the only protocols ufw accepts a
+# port specification for; anything else gets a protocol only rule.
+#
+# Args:
+#
+#     ip - The address to build the specifications for, as a plain string.
+#          Expected to be an already validated and lowercased IPv4 or IPv6
+#          address. It is interpolated into the rule as is.
+#
+# Returns the specifications as a list of strings, one per rule. Each is the
+# portion of the rule after the deny or reject verb, so the caller prepends
+# 'ufw deny ' or 'ufw delete deny ' to it. There is one entry per applicable
+# protocol, so a single ban may produce several rules.
+#
+#     # no protocols and no ports: block everything from the address
+#     $self->_rule_specs('10.0.0.1');
+#     #   from 10.0.0.1 to any
+#
+#     # ports 22 with no protocols, so tcp and udp are assumed
+#     $self->_rule_specs('10.0.0.1');
+#     #   proto tcp from 10.0.0.1 to any port 22
+#     #   proto udp from 10.0.0.1 to any port 22
+#
+#     # protocols tcp, ports 22 and 143
+#     #   proto tcp from 10.0.0.1 to any port 22,143
+#
+#     # protocols gre, which takes no ports
+#     #   proto gre from 10.0.0.1 to any
 sub _rule_specs {
 	my ( $self, $ip ) = @_;
 
@@ -343,10 +383,58 @@ sub _rule_specs {
 	return @specs;
 } ## end sub _rule_specs
 
-# Internal helper. Returns the commands used to kill existing
-# connections/state for the passed IP, per the configured kill mode. The kill
-# is scoped to the configured protocols so protocols that are not being
-# blocked are left alone.
+# Internal helper. Returns the commands that tear down the passed IP's
+# existing connections, used when the kill option is on.
+#
+# This overrides the shared _kill_commands in
+# Net::Firewall::BlockerHelper::Util, which the iptables, nftables, and
+# firewalld backends inherit. It differs in two ways.
+#
+# First, it offers an ss based mode as well as the conntrack one, selected by
+# the kill option. ss kills sockets directly rather than dropping conntrack
+# entries, which is useful on a host where conntrack is not in play. ss can
+# only kill TCP connections and connected UDP sockets, so its scoping is a
+# choice between -t, -u, and -tu rather than a per protocol command; when
+# neither TCP nor UDP is among the blocked protocols there is nothing it can
+# do and no command is emitted at all. Note the address is bracketed
+# unconditionally in the ss destination, which is the form ss accepts for both
+# families.
+#
+# Second, the conntrack path here recognizes a much narrower protocol set,
+# just tcp, udp, and gre, matching what ufw itself will write rules for. The
+# shared version additionally handles sctp, dccp, udplite, and the ICMPs, none
+# of which apply here, which is also why this version needs no ICMP family
+# filtering and no duplicate suppression.
+#
+# Args:
+#
+#     ip - The address whose connections should be dropped, as a plain string.
+#          Expected to be an already validated and lowercased IPv4 or IPv6
+#          address. In conntrack mode the family is decided by matching
+#          against $IPv4_re and controls the -f flag; in ss mode the address
+#          is used as is.
+#
+# Returns the commands as a list of strings, ready to hand to the runner. The
+# ss mode returns exactly one command, or none when neither TCP nor UDP is
+# being blocked. The conntrack mode returns one entry per applicable protocol,
+# or a single unscoped entry when nothing is configured, and may be empty if
+# every configured protocol was filtered out.
+#
+#     # kill mode 'ss', nothing configured, so both TCP and UDP
+#     $self->_kill_commands('10.0.0.1');
+#     #   ss -K -tu dst "[10.0.0.1]"
+#
+#     # kill mode 'ss' with protocols tcp only
+#     #   ss -K -t dst "[10.0.0.1]"
+#
+#     # kill mode 'ss' with protocols gre only: nothing ss can kill
+#     $self->_kill_commands('10.0.0.1');    # ()
+#
+#     # conntrack mode, nothing configured
+#     #   conntrack -D -s 10.0.0.1
+#
+#     # conntrack mode, IPv6, protocols tcp
+#     #   conntrack -f ipv6 -D -p tcp -s 2001:db8::1
 sub _kill_commands {
 	my ( $self, $ip ) = @_;
 
@@ -401,7 +489,30 @@ sub _kill_commands {
 	return @commands;
 } ## end sub _kill_commands
 
-# Internal helper. Returns the command used to verify ufw is enabled.
+# Internal helper. Returns the command used to confirm that ufw is actually
+# enabled, which is this backend's health check.
+#
+# There is no container to look for here, no chain and no set, so unlike the
+# other packet filter backends there is nothing whose presence would prove the
+# setup is intact. What can go wrong instead is ufw being disabled out from
+# under a running process, at which point every rule stops applying while ufw
+# still happily accepts new ones. Checking the status is the closest
+# equivalent, and it is what check and the self heal path use to decide
+# whether a rebuild is needed.
+#
+# The grep is what turns the check into an exit status: ufw status always
+# succeeds, and prints "Status: active" or "Status: inactive", so the state
+# has to be read out of the output rather than the return code. Matching is
+# anchored, case insensitive, and tolerant of the spacing.
+#
+# Takes no arguments.
+#
+# Returns the command as a single string ready to hand to the runner, a
+# pipeline whose exit status is 0 when ufw is enabled and non zero when it is
+# not.
+#
+#     $self->_status_command;
+#     #   ufw status | grep -qiE "^Status:[[:space:]]*active"
 sub _status_command {
 	my ($self) = @_;
 

@@ -361,13 +361,44 @@ sub init_backend {
 	$self->{backend_obj} = $backend_obj;
 } ## end sub init_backend
 
-# Internal helper. If self healing is enabled and the backend is inited, ask
-# the backend to check that its firewall setup is still present and re_init it
-# if it is not. This is the fail2ban actioncheck-before-action behavior. Both
-# the check and re_init are best effort; any failure is left for the following
-# ban/unban to surface.
+# Internal helper. If self healing is enabled and the backend is inited, asks
+# the backend to check that its firewall setup is still present and re_inits it
+# if it is not. This is the fail2ban actioncheck-before-action behavior: the
+# setup can be torn down out from under a long lived process by a firewall
+# restart or by someone flushing the rules by hand, and without this the
+# following ban would appear to succeed while adding nothing.
 #
-# Honors a per-call self_heal override passed via %opts.
+# Called at the top of ban, unban, ban_cidr, and unban_cidr, which pass their
+# own %opts straight through. Nothing happens at all if self healing is off,
+# if no backend has been inited yet, or if the backend's inited flag is false.
+#
+# Both the check and the re_init are best effort and run inside eval. A check
+# that dies is treated as "do not heal" rather than as unhealthy, so a backend
+# whose check is broken does not trigger a rebuild on every call. A re_init
+# that dies is swallowed here and left for the ban or unban that follows to
+# surface, which keeps the error the caller sees tied to the operation they
+# actually asked for.
+#
+# Args:
+#
+#     %opts - The option hash the calling method received, passed through
+#             verbatim. Only the self_heal key is looked at, and only if it
+#             exists; it is a per-call override of the object's self_heal
+#             setting and is taken as a boolean, so 0 disables healing for
+#             this call and 1 forces it on. Every other key is ignored.
+#
+# Returns nothing. Whether the setup was checked, found unhealthy, or rebuilt
+# is deliberately not reported; callers proceed with their ban or unban either
+# way.
+#
+#     # honor the object's self_heal setting
+#     $self->_self_heal;
+#
+#     # inside ban, passing the caller's options through
+#     $self->_self_heal(%opts);
+#
+#     # skip healing for this one call
+#     $self->_self_heal( self_heal => 0 );
 sub _self_heal {
 	my ( $self, %opts ) = @_;
 

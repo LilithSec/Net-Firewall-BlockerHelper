@@ -279,20 +279,71 @@ sub new {
 	return $self;
 } ## end sub new
 
-# Internal helper. Returns the URL for the passed method path, appended to
-# <scheme>://<host>/api/firewall/.
+# Internal helper. Builds the full URL for an OPNsense firewall API endpoint.
+# Every request this backend makes goes through here.
 #
-#     my $url = $self->_url( 'alias_util/list/' . $alias );
+# Everything this backend needs lives under the firewall module of the API, so
+# that much of the path is baked in and callers supply only the part below it.
+#
+# Args:
+#
+#     method_path - The path below /api/firewall/, as a plain string, such as
+#                   'alias_util/list/blocklist' or
+#                   'alias_util/add/blocklist'. Appended as is, so any values
+#                   embedded in it are expected to have been percent encoded
+#                   by the caller already.
+#
+# Returns the complete URL as a string. The scheme and host come from the
+# options.
+#
+#     $self->_url( 'alias_util/list/' . $alias );
+#     #   https://opn.example.org/api/firewall/alias_util/list/blocklist
+#
+#     $self->_url( 'alias_util/add/' . $alias );
+#     #   https://opn.example.org/api/firewall/alias_util/add/blocklist
 sub _url {
 	my ( $self, $method_path ) = @_;
 
 	return $self->{options}{scheme} . '://' . $self->{options}{host} . '/api/firewall/' . $method_path;
 }
 
-# Internal helper. Performs a HTTP request via LWP::UserAgent, authenticated
-# via basic auth with the key/secret, returning the decoded JSON on success
-# and dying with a explanation on any HTTP level failure. Never called in
-# testing mode.
+# Internal helper. Performs one HTTP request against the OPNsense API. Every
+# call this backend makes to the box goes through here.
+#
+# The user agent is built on first use and cached on the object, so a run of
+# requests shares one agent. LWP::UserAgent is loaded with require at that
+# point rather than at compile time, since only the HTTP backends need it;
+# failing to load it dies with an explanation naming this backend. The
+# insecure option turns off certificate verification, which is there because
+# an OPNsense box commonly presents a self signed certificate.
+#
+# Authentication is HTTP basic, but with the API key and secret standing in
+# for a username and password, which is how OPNsense issues API credentials.
+#
+# Any HTTP level failure dies rather than setting an error. The callers wrap
+# this in eval and turn the exception into the appropriate error code, which
+# is what lets one helper serve paths that report ban, unban, and teardown
+# failures differently.
+#
+# Never called in testing mode; those paths record the request instead.
+#
+# Args:
+#
+#     method - The HTTP method, as a plain string, such as 'GET' or 'POST'.
+#
+#     url    - The full URL to request, as a plain string, from _url.
+#
+#     body   - Optional request body, as an already encoded JSON string. undef
+#              for methods that carry no body.
+#
+# Returns the decoded response body as whatever structure the JSON held,
+# normally a hashref. Dies on any non success HTTP status.
+#
+#     $self->_request( 'GET', $self->_url( 'alias_util/list/' . $alias ) );
+#
+#     # the usual shape at the call sites
+#     eval { $self->_request( 'POST', $url, $body ); };
+#     if ($@) { ... raise banFailed ... }
 sub _request {
 	my ( $self, $method, $url, $body ) = @_;
 
