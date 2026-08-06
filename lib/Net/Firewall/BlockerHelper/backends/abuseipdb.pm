@@ -694,13 +694,6 @@ sub re_init {
 
 	$self->errorblank;
 
-	if ( !$self->{inited} ) {
-		$self->{error}       = 1;
-		$self->{errorString} = 'backend has not been inited';
-		$self->warn;
-		return;
-	}
-
 	# teardown is best effort here for parity with the other backends, even
 	# though for this backend it can not fail
 	{

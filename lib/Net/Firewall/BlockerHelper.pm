@@ -734,6 +734,15 @@ Tells the backend to re-init itself, rebuilding its firewall setup and
 re-applying the current ban list. A backend failure is caught and re-raised
 as reInitFailed.
 
+The backend does not need to be inited for this to work, so as well as
+recovering a setup that was removed externally, this is what brings one back
+after a L</teardown> or L</stop>. The ban list is held on the backend object
+and survives both, so the bans are re-applied rather than lost.
+
+    $fw_helper->re_init;
+
+    # resuming after a stop
+    $fw_helper->stop;
     $fw_helper->re_init;
 
 =cut

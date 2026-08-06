@@ -97,6 +97,7 @@ t/pod-coverage.t
 t/pod.t
 t/self_heal.t
 t/teardown_reinit.t
+t/reinit_after_stop.t
 t/shell.t
 t/shell_exec.t
 t/shell_new.t

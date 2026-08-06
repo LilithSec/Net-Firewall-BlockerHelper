@@ -680,17 +680,10 @@ sub re_init {
 
 	$self->errorblank;
 
-	if ( !$self->{inited} ) {
-		$self->{error}       = 1;
-		$self->{errorString} = 'backend has not been inited';
-		$self->warn;
-		return;
-	}
-
 	$self->_apply(16);
 
 	$self->{inited} = 1;
-} ## end sub re_init
+}
 
 =head2 teardown
 

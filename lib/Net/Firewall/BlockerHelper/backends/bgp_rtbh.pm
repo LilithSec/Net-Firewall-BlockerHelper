@@ -897,13 +897,6 @@ sub re_init {
 
 	$self->errorblank;
 
-	if ( !$self->{inited} ) {
-		$self->{error}       = 1;
-		$self->{errorString} = 'backend has not been inited';
-		$self->warn;
-		return;
-	}
-
 	# teardown is best effort; a session that already dropped the routes is
 	# exactly what re_init is meant to recover from
 	{

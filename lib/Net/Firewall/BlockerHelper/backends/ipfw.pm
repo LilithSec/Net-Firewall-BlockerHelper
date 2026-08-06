@@ -464,8 +464,9 @@ sub new {
 =head2 init
 
 Initiates the backend. First any old remnants are removed on a best effort
-basis, destroying the table C<E<lt>prefixE<gt>_E<lt>nameE<gt>> and deleting
-the configured rule number, with failures ignored. The table is then created
+basis, deleting the configured rule number and then destroying the table
+C<E<lt>prefixE<gt>_E<lt>nameE<gt>>, with failures ignored. The rule goes
+first as ipfw will not destroy a table a rule still references. The table is then created
 via C<ipfw table ... create> and a block rule is added at the configured rule
 number for each configured protocol, matching from C<table(...)> to C<me> or
 C<me6> depending on the family, with the configured ports appended for
@@ -524,9 +525,12 @@ sub init {
 	my %is_v6 = ( ip6 => 1, ipv6 => 1, icmp6 => 1, 'ipv6-icmp' => 1, icmpv6 => 1 );
 	my %is_v4 = ( ip4 => 1, ipv4 => 1, icmp => 1, igmp => 1 );
 
+	# the rule has to go before the table it references, as ipfw refuses to
+	# destroy a table that is still in use by a rule; destroying first leaves
+	# the table behind and the create below then fails with "File exists"
 	my @fail_okay_commands;
-	push( @fail_okay_commands, 'ipfw table ' . $self->{prefix} . '_' . $self->{name} . ' destroy' );
 	push( @fail_okay_commands, 'ipfw delete ' . $self->{options}{rule} );
+	push( @fail_okay_commands, 'ipfw table ' . $self->{prefix} . '_' . $self->{name} . ' destroy' );
 
 	if ( $self->{testing} ) {
 		$self->{frontend_obj}->{test_data}{fail_okay_commands} = \@fail_okay_commands;
@@ -957,13 +961,6 @@ sub re_init {
 
 	$self->errorblank;
 
-	if ( !$self->{inited} ) {
-		$self->{error}       = 1;
-		$self->{errorString} = 'backend has not been inited';
-		$self->warn;
-		return;
-	}
-
 	# teardown is best effort here as a partially or fully wiped setup is
 	# exactly what re_init needs to recover from; init cleans up any remnants
 	{
@@ -1000,8 +997,16 @@ sub re_init {
 
 =head2 teardown
 
-Tears down the setup for the backend, destroying the table
-C<E<lt>prefixE<gt>_E<lt>nameE<gt>> and deleting the configured rule number.
+Tears down the setup for the backend, deleting the configured rule number and
+then destroying the table C<E<lt>prefixE<gt>_E<lt>nameE<gt>>.
+
+The ordering matters. ipfw will not destroy a table that is still in use by a
+rule, so the rule is removed first; doing it the other way round leaves the
+table behind.
+
+Both commands are always attempted, and a failure of either is raised only
+once both have run, so a rule that has already been removed does not stop the
+table from being destroyed.
 
 It does not check if it has been inited or not, so if called prior to
 calling init, it will error as the commands will fail.
@@ -1017,21 +1022,31 @@ sub teardown {
 
 	$self->{inited} = 0;
 
+	# the rule has to go before the table it references, as ipfw refuses to
+	# destroy a table that is still in use by a rule
 	my @commands;
-	push( @commands, 'ipfw table ' . $self->{prefix} . '_' . $self->{name} . ' destroy' );
 	push( @commands, 'ipfw delete ' . $self->{options}{rule} );
+	push( @commands, 'ipfw table ' . $self->{prefix} . '_' . $self->{name} . ' destroy' );
 
 	if ( $self->{testing} ) {
 		$self->{frontend_obj}->{test_data} = \@commands;
 	} else {
+		# every command is attempted before anything is raised. errors are
+		# fatal, so warning inside the loop would abort it and leave the rest
+		# of the setup in place; a rule that is already gone must not stop the
+		# table from being destroyed
+		my @failures;
 		foreach my $item (@commands) {
 			my $output = `$item  2>&1`;
 			if ( $? != 0 ) {
-				$self->{error} = 17;
-				$self->{errorString}
-					= 'teardown failed. non-zero exit code for the command... "' . $item . '"... output... ' . $output;
-				$self->warn;
+				push( @failures, 'command... "' . $item . '"... output... ' . $output );
 			}
+		}
+
+		if (@failures) {
+			$self->{error}       = 17;
+			$self->{errorString} = 'teardown failed. non-zero exit code for the ' . join( ' and the ', @failures );
+			$self->warn;
 		}
 	} ## end else [ if ( $self->{testing} ) ]
 } ## end sub teardown

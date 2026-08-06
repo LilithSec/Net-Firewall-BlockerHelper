@@ -854,7 +854,8 @@ Tells the backend to re-init it's self.
 This will call teardown and init again. After that it will
 re-added all previously added bans.
 
-Will error if already inited.
+Does not require the backend to be inited, so it may also be used to bring
+the setup back after a teardown or stop.
 
     $backend->re_init;
 
@@ -864,13 +865,6 @@ sub re_init {
 	my ( $self, %opts ) = @_;
 
 	$self->errorblank;
-
-	if ( !$self->{inited} ) {
-		$self->{error}       = 1;
-		$self->{errorString} = 'backend has not been inited';
-		$self->warn;
-		return;
-	}
 
 	# teardown is best effort here as a partially or fully wiped setup is
 	# exactly what re_init needs to recover from; init cleans up any remnants

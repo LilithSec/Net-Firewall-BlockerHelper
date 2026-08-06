@@ -654,13 +654,6 @@ sub re_init {
 
 	$self->errorblank;
 
-	if ( !$self->{inited} ) {
-		$self->{error}       = 1;
-		$self->{errorString} = 'backend has not been inited';
-		$self->warn;
-		return;
-	}
-
 	# render the current ban list back out; the file is authored purely from
 	# state so this restores everything in one write
 	$self->_apply(16);
